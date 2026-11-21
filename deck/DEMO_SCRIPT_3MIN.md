@@ -110,7 +110,7 @@ If you're running long, cut the Abdul Rahman segment (1:10–1:30). Never cut H-
 | Runtime | about 16 s for 819 hits on a laptop (15.9 s wall clock) | `time system/run dev /tmp/a.jsonl` |
 | Rewordings | 16 single rewordings with 0 flips toward clearing; "all" combined: 4/819 flips, all to REVIEW | `python3 tools/perturb.py dev` |
 | Shadow set | 559 synthetic hits (seed 7): 547 correct (97.9%), 0 unsafe, score 0.965; all 12 errors are DIFFERENT→REVIEW | `tools/shadow.py gen <dir> 7`, `system/run <dir> p.jsonl`, `tools/shadow.py score <dir> p.jsonl` |
-| Tests | 59 checks: 24 policy, 21 age parser, 14 unit | `make test` |
+| Tests | 73 checks: 27 policy, 21 age parser, 7 name matcher, 18 unit | `make test` |
 | H-4D76E3 | SAME / NAME_DOB_LOCATION_MATCH, CUS-970916, evidence NOTE-4E8A14, CUS-906311, CUS-970916 | `grep H-4D76E3 output/dev.jsonl` |
 | H-C864DC | DIFFERENT / DOB_MISMATCH, CUS-553603, evidence KYC-68E6D6 | `grep H-C864DC output/dev.jsonl` |
 | H-13E1CF | DIFFERENT / TEMPORAL_IMPOSSIBILITY, CUS-364225, practice-labelled and correct | `grep H-13E1CF output/dev.jsonl` |

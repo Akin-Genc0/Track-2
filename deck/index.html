@@ -162,7 +162,7 @@ aside.notes{display:none}
       <div style="display:flex;align-items:baseline;gap:26px;margin-top:6px"><div class="big">20–30×</div><div style="font-size:30px;color:var(--soft);line-height:1.3;white-space:nowrap">worse to wrongly clear<br>than to send to review</div></div>
     </div>
   </div>
-  <div class="footer"><span>Track 2 · designed by Diligent</span><span><b>02</b> / 08</span></div>
+  <div class="footer"><span>Track 2 · designed by Diligent</span><span><b>02</b> / 09</span></div>
   <aside class="notes">Every screening hit lands in an analyst's queue, and most are false positives. But the errors are not equal. Wrongly clearing a real match costs 60 points; any other mistake costs two or three. A wrong clearance is twenty to thirty times worse than a review. So the goal isn't to decide everything. It's to clear only what you can prove.</aside>
 </section>
 
@@ -185,7 +185,7 @@ aside.notes{display:none}
     <div class="stage"><div class="n">04</div><div class="t">Decide</div><div class="f">decide.py</div><div class="d">Apply the policy: decision, reason code, customer record, cited evidence and reason text.</div></div>
   </div>
   <div class="strip"><span class="tag">Python standard library only</span><span class="tag">no model</span><span class="tag">no network</span><span class="tag">about 16 s for all 819 dev hits</span></div>
-  <div class="footer"><span>Track 2 · Sanctions screening</span><span><b>03</b> / 08</span></div>
+  <div class="footer"><span>Track 2 · Sanctions screening</span><span><b>03</b> / 09</span></div>
   <aside class="notes">That's our rule, built into the code: clear only on a contradiction, confirm only when the facts agree, otherwise review. Four stages. Resolve finds the customer through an account, login or email link, or by searching name, date of birth, country and city, and merges duplicate records. Profile builds the customer's facts; the latest approved ID check wins. Hit facts reads names, aliases in any script, countries, birth dates and date of death. Decide applies the policy. Plain Python, no model, no network: about 16 seconds for all 819 dev hits.</aside>
 </section>
 
@@ -210,7 +210,7 @@ verified_dob = ((1968, 3, 5),
       <div class="mono" style="font-size:20px;color:var(--mute);margin-top:16px">Fathom · H-582410 Elvira Velasco Morillo · cited records outlined in gold</div>
     </div>
   </div>
-  <div class="footer"><span>Track 2 · Sanctions screening</span><span><b>04</b> / 08</span></div>
+  <div class="footer"><span>Track 2 · Sanctions screening</span><span><b>04</b> / 09</span></div>
   <aside class="notes">Every fact we hold carries the record ID it came from. When we say this customer was born on 5 March 1968, we cite NOTE-14E25A, the passport check, and that ID goes straight into the evidence list. The reason uses this hit's own dates, countries and names.</aside>
 </section>
 
@@ -227,7 +227,7 @@ verified_dob = ((1968, 3, 5),
       <div class="callout"><div class="t">Live stats</div><div class="d">Counts, practice score and unsafe clears at a glance.</div></div>
     </div>
   </div>
-  <div class="footer"><span>ui/serve.py</span><span><b>05</b> / 08</span></div>
+  <div class="footer"><span>ui/serve.py</span><span><b>05</b> / 09</span></div>
   <aside class="notes">This is Fathom, our analyst view. All 819 hits, customer and list entry side by side, agreements and conflicts highlighted, with decision, reason and evidence. Here, Mohammad Nadeem Ghani: name, date of birth and country all agree, so it's a true match.</aside>
 </section>
 
@@ -259,7 +259,7 @@ verified_dob = ((1968, 3, 5),
       </div>
     </div>
   </div>
-  <div class="footer"><span>Eval harness: schema validator · cost scorer · 5-run reproducibility check</span><span><b>06</b> / 08</span></div>
+  <div class="footer"><span>Eval harness: schema validator · cost scorer · 5-run reproducibility check</span><span><b>06</b> / 09</span></div>
   <aside class="notes">On the 50 practice labels: 50 out of 50 decisions correct and zero unsafe clearances. Reason code, customer record and evidence match the reference on all 50. Across the dev set we clear 57 percent of hits and send 28 percent to review.</aside>
 </section>
 
@@ -277,13 +277,33 @@ verified_dob = ((1968, 3, 5),
   <div class="trio">
     <div class="card"><div class="t">Rewordings</div><div class="d">Surname-first and lower-case names, dates like “3rd March 1970” and “03/03/70”, reworded notes.</div></div>
     <div class="card"><div class="t">Byte-identical</div><div class="d">Same output across runs and across different hash seeds. No randomness, no clock, inputs sorted by ID.</div></div>
-    <div class="card"><div class="t">24 policy tests</div><div class="d">Death after screening, company incorporated after earliest report, placeholder names, territories, DOB one year off, ambiguous day/month.</div></div>
+    <div class="card"><div class="t">27 policy tests</div><div class="d">Death after screening, company incorporated after earliest report, placeholder names, territories, DOB one year off, ambiguous day/month.</div></div>
   </div>
-  <div class="footer"><span>tools/perturb.py · tests/test_policy.py</span><span><b>07</b> / 08</span></div>
+  <div class="footer"><span>tools/perturb.py · tests/test_policy.py</span><span><b>07</b> / 09</span></div>
   <aside class="notes">The unseen set rewords the free text, so we attacked ourselves. A harness rewords our data 16 ways: surname-first names, dates like "third March 1970", lower-case names. Before hardening, one rewording flipped up to 29 decisions toward clearing. After: zero, on every rewording. In our two combined runs, only 2 to 4 of 819 change, all toward review. And output is byte-identical across runs.</aside>
 </section>
 
-<!-- 8 LIMITS -->
+<!-- 8 EXTERNAL PERTURBATION + DETERMINISM -->
+<section class="slide">
+  <div class="eyebrow">Independent check · robustness &amp; determinism</div>
+  <h2>An outside test tried 8 ways to move us. <em>0 of 819</em> decisions changed.</h2>
+  <div class="ba">
+    <div class="box after"><div class="k">8 perturbed copies of dev</div><div class="v">0</div><div class="l">of 819 decisions changed</div></div>
+    <div class="arr" style="opacity:0">→</div>
+    <div class="box"><div class="k" style="color:var(--accent)">One-letter deletions</div><div class="v">19</div><div class="l">moved, 18 toward REVIEW; the 1 clear is being fixed</div></div>
+    <div class="arr" style="opacity:0">→</div>
+    <div class="box after"><div class="k">5 fresh-clone runs</div><div class="v">1</div><div class="l">output: byte-identical across different PYTHONHASHSEED values</div></div>
+  </div>
+  <div class="trio">
+    <div class="card"><div class="t">What was changed</div><div class="d">Accents stripped, name order swapped, hit, customer and KYC names upper-cased, ISO DOBs rewritten as “24 August 1994”.</div></div>
+    <div class="card"><div class="t">Typos are the edge</div><div class="d">Deleting one letter in a long name part moved 19 decisions; 18 went to REVIEW, the safe direction.</div></div>
+    <div class="card"><div class="t">Check it yourself</div><div class="d">Run <span class="mono">system/run</span> twice, then <span class="mono">sha256sum</span>: the hashes match. Tested on Python 3.11 and 3.13.5.</div></div>
+  </div>
+  <div class="footer"><span>External perturbation test · fresh-clone reproducibility check</span><span><b>08</b> / 09</span></div>
+  <aside class="notes">We also had an outside test try to move us. It built 8 perturbed copies of the dev set: accents stripped, names reordered, names upper-cased on the hit, the customer and the KYC check, and dates rewritten as "24 August 1994". Zero of 819 decisions changed. The only thing that moved us was deleting a single letter in long names: 19 decisions moved, 18 of them to review, which is the safe direction, and the one clear is being fixed. And five fresh clones, each with a different hash seed, gave byte-identical output. You can check it yourself: run it twice and compare the sha256.</aside>
+</section>
+
+<!-- 9 LIMITS -->
 <section class="slide">
   <div class="eyebrow">Honest limits &amp; what's next</div>
   <h2>What we know we <em>don't</em> know.</h2>
@@ -292,7 +312,7 @@ verified_dob = ((1968, 3, 5),
       <h3 style="color:var(--red)">Limits</h3>
       <ul class="pts" style="gap:22px">
         <li style="font-size:29px"><b>50 labels is small</b> — a perfect practice score is a floor check, not proof.</li>
-        <li style="font-size:29px"><b>216 clears are coded on location</b>, <b>126 on a verified name</b>.</li>
+        <li style="font-size:29px"><b>217 clears are coded on location</b>, <b>125 on a verified name</b>.</li>
         <li style="font-size:29px">Some policy-literal clears look risky in practice — branch listings in other countries, a shared single name part. Flagged in the README.</li>
       </ul>
     </div>
@@ -306,13 +326,13 @@ verified_dob = ((1968, 3, 5),
     </div>
   </div>
   <div class="close" style="margin-top:44px">Safe by design. <em>Auditable by default.</em></div>
-  <div class="footer"><span>Clearsight · Track 2</span><span><b>08</b> / 08</span></div>
-  <aside class="notes">What's missing: 50 labels is a small sample. 216 clears are coded on location and 126 on a verified name. Some, like bank branches abroad, follow the policy literally but look risky; we flag them in the README. Next: route those to sampled QA in Fathom. Safe by design, auditable by default. Thank you.</aside>
+  <div class="footer"><span>Clearsight · Track 2</span><span><b>09</b> / 09</span></div>
+  <aside class="notes">What's missing: 50 labels is a small sample. 217 clears are coded on location and 125 on a verified name. Some, like bank branches abroad, follow the policy literally but look risky; we flag them in the README. Next: route those to sampled QA in Fathom. Safe by design, auditable by default. Thank you.</aside>
 </section>
 
 </div></div>
 <div id="progress"></div>
-<div id="counter">1 / 8</div>
+<div id="counter">1 / 9</div>
 <div id="help">← → navigate · n notes · f fullscreen</div>
 <div id="notes"><h4>Speaker notes</h4><div id="notestext"></div></div>
 <script>
