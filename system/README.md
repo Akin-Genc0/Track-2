@@ -44,7 +44,7 @@ Each customer fact is stored with the set of record IDs it came from. For exampl
 When several contradictions apply, the evidence is the union and the reason lists up to three of them. Reasons are generated from templates filled with this hit's own values: dates, countries, names and record IDs. `explain.py` renders every reason and enforces the brief's two to four sentences: the deciding facts first, then, if only one deciding fact applies, a sentence on what else was compared or is missing (name, date of birth, countries). For example, H-9FD80D: "The customer is linked only to Germany but the hit is linked only to Switzerland. The country difference alone clears the hit under the policy, because the name and date of birth do not both agree: the customer's name agrees with the hit's name Markus A. Müller-Kägi and the hit gives no date of birth to compare."
 
 ## Determinism
-There is no randomness, no model, no network and no clock. Every input is sorted by ID before iteration. Union-find roots are the smallest record ID. Ties between checks on the same date break on check ID. `run` sets `PYTHONHASHSEED=0`, and runs with other seeds give byte-identical output (checked). A fresh-clone check of 5 runs with `PYTHONHASHSEED` 1 to 5 gave byte-identical output that matches `output/dev.jsonl` (verified 14:47 on f91f316). Any unexpected exception on a hit falls back to `REVIEW` instead of crashing, so a run always writes one line per hit.
+There is no randomness, no model, no network and no clock. Every input is sorted by ID before iteration. Union-find roots are the smallest record ID. Ties between checks on the same date break on check ID. `run` sets `PYTHONHASHSEED=0`, and runs with other seeds give byte-identical output (checked). A fresh-clone check of 5 runs with `PYTHONHASHSEED` 1 to 5 gave byte-identical output that matches `output/dev.jsonl` (verified 14:47 on f91f316), and the final tree's output is identical under `PYTHONHASHSEED` 0 to 3 (re-checked after the reason-wording fix). Any unexpected exception on a hit falls back to `REVIEW` instead of crashing, so a run always writes one line per hit.
 
 ## Results on the development set
 - 50 practice labels: 50/50 decisions correct, 0 unsafe clearances, local decision score 1.000. Reason code fits 50/50, customer record right 50/50, evidence identical to the reference on all 50.
@@ -197,6 +197,61 @@ on the customer's own applicant, like Akin's three). Turned on, it moves 60 dev 
 1. **Clear mismatch: H-D861DA → DIFFERENT_ENTITY / DOB_MISMATCH.** The alert's account ACC-A82365 is a joint account (CUS-804632 and CUS-902175), and the screened name and DOB pick CUS-804632. That customer's latest approved identity check is an onboarding note, NOTE-8548C1, giving a DOB of 1979-11-08. The hit has no `dobs` field, but its profile notes give an age at a date, so it was born in 1976 or 1977. 1979 is more than one year outside both years, so the hit is cleared, citing NOTE-8548C1.
 2. **Match: H-582410 → SAME_ENTITY / NAME_DOB_LOCATION_MATCH.** The same joint-account resolution gives CUS-377745. Verified DOB 1968-03-05 (NOTE-14E25A) is one of the hit's possible years (1967 or 1968, from "a 30-year-old … November 1998"). Spain is shared through the customer record, and the name agrees with "Elvira Velasco Morillo". Evidence: NOTE-14E25A, CUS-377745.
 3. **Left for review: H-CDEC83 → REVIEW / INSUFFICIENT_DATA, customer AMBIGUOUS.** The alert has no link. Name, DOB, country and city fit two different people (CUS-037213 and CUS-565167; CUS-892985 is the same person as one of them). Each shares Panama with the hit and agrees on the name "Juan González", but the hit gives no birth date to compare. Both people lead to REVIEW, so the decision is REVIEW and `customer_record_id` is `AMBIGUOUS`.
+
+## Judge Q&A
+
+**How do you find the customer, and the listed person?** *Customer side:* `resolve.py`, `CustomerIndex.resolve`. Follow the alert's
+`account_ref`, then `login_handle`, then `email`. On a joint account, the screened name and DOB pick the holder. With no link, match on
+name, DOB, country and city (`CustomerIndex.fits`). Records are grouped into one person only on phone plus full DOB, or a shared
+document number on approved checks (`UnionFind`). If more than one person fits and they lead to different decisions, the hit goes to
+`REVIEW / AMBIGUOUS_CUSTOMER_RECORD` (`screen.run`). `CustomerIndex.near` also checks anyone excluded only by the city's spelling.
+`profile.py`, `Profile`, then follows accounts to onboarding and the KYC checks, and email to the support notes. *Listed-person side:*
+`hitfacts.py`, `HitFacts`, reads the hit's names and aliases, entity type, structured DOBs, countries and death date. It also reads
+dated ages in the profile text (`years_from_age`). Search results count only when tied to this listing (`build_search_index`). Names
+on both sides are compared by `textutil.NameMatcher.agree_parts` (principle 8).
+
+**How is evidence represented?** Every customer fact in `profile.Profile` is stored with the set of record IDs it came from, for
+example `countries = {"Spain": {"CUS-377745"}}`. `decide.Decider.decide_person` cites only the sources of the facts that decided the
+hit. See "How evidence is represented" above. Practice evidence agrees with the references on all 50 (Jaccard 1.00).
+
+**How do you keep runs the same?** There is no model, network, clock or randomness. Customer records are iterated in ID order
+(`resolve.CustomerIndex`), and hits in alert and hit ID order (`screen.run`). Union-find roots are the smallest ID (`resolve.UnionFind`). Ties break on check ID. `system/run` pins
+`PYTHONHASHSEED=0`, and the output is byte-identical across seeds (see "Determinism"). Any exception on one hit falls back to
+`REVIEW` (`screen.fallback`), so every hit still gets a line.
+
+**Do the explanations say what is missing?** Yes. `explain.explain` enforces two to four sentences, with the deciding facts first.
+`decide.Decider.decide_person` adds what was compared or is missing: whose date of birth is absent ("the hit gives no date of birth
+to compare with the customer's"), why no country was compared, or that the names cannot be confirmed to agree. The 40-line audit is
+in [audit/REASON_HONESTY.md](../audit/REASON_HONESTY.md). One known gap is open: on 13 ambiguous reviews, a candidate left for
+review is summarised as "nothing settles it".
+
+**Why rule-based, not an LLM?** The policy is a short list of explicit grounds, and an unsafe clearance costs 20 to 30 times a
+review. Rules give the same answer every run, cite exact records, cost $0, need no key, and can be tested line by line against the
+policy (`tests/test_policy.py`, `redteam/`). An LLM would add variance and cost exactly where the brief punishes mistakes most.
+The price is that free text is read with patterns. That is why every unparsed phrasing falls to `REVIEW`, never to a clear.
+
+**What about wording you have never seen?** The shadow sets use formats and phrasings that never occur in dev. On seeds 7 and 21
+they score 0.965 with 0 unsafe; every miss is a `REVIEW` that could have been a clear (cost 3). `tools/perturb.py` rewrites dev
+names, dates, ages and countries in 18 ways; no rewrite moves any decision towards `DIFFERENT_ENTITY`. `tools/unseen_sim.py`
+mutates the schema; there are no crashes and no moves to clear.
+
+**What about the 58 clears where the record name agrees but the verified name does not?** In 58 dev clears (`NAME_MISMATCH_VERIFIED`),
+the customer's own record name agrees with the hit, but the approved identity check gives a different name. Often the surname is
+the same and the given name differs, as with a family member on a shared account. Policy principle 4 says the verified legal name
+outranks the record name, and the clear rule for the name ground says "even if the name on their record does". The practice labels
+clear this exact pattern (H-2808BE, H-EDBB79, H-380854). `DOUBTFUL_LINK_REVIEW` in `decide.py` (`Decider.doubtful_link`) would send
+it to review instead. It is **off**: switched on, it moves 60 dev clears to `REVIEW` and practice falls to 46/50 (score 0.889,
+measured). In a live deployment we would turn it on, or sample these clears for QA.
+
+**Known failure modes.**
+- **Policy-literal clears that look risky:** 217 clears rest on location alone (for example, bank branch listings abroad) and 79 on a
+  verified name alone. See "Honest limitations".
+- **Missing countries:** if the bank's records lack a country the customer is linked to, a location clear can be wrong. This risk
+  comes from the policy.
+- **New phrasings:** an age or birth date written in a new way gives no date, so the hit goes to `REVIEW`. The reverse risk, a
+  number misread as an age, is limited by restricting weak age cues to search snippets.
+- **Team calls (red-team F12):** a support note saying the record DOB is a typo, and a day/month swap, are still cleared literally.
+- **Small labelled set:** 50 practice labels cannot estimate unseen accuracy.
 
 ## Honest limitations
 - **Free text is parsed with patterns, not a model.** Onboarding identity notes are read like this. The name is the longest upper-case token run; if there is none, it is a run of Capitalised words that shares a name part with the person's own records. The DOB is the date nearest a birth keyword (not the note's own date). The document country is a country or demonym outside the name. A note naming a rejected, failed or expired check is not evidence. A name read from a note is used only if it shares at least one part with the person's own records, which guards against parser garbage. Stress test: we rewrote every dev KYC note with Title-Case names. One decision moved (SAME → REVIEW) and none moved towards clearing.
