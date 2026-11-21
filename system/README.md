@@ -52,6 +52,31 @@ There is no randomness, no model, no network and no clock. Every input is sorted
 - Final integrated tree (after merging the loader hardening and repo polish): `tools/check_submission.py` passes on `output/dev.jsonl` (every row valid, every reason 2–4 sentences, every conclusive decision cites evidence); `tests/test_policy.py` 25/25, `tests/test_ages.py` 21/21, `tests/test_textutil.py` 7/7, `tests/test_loader.py` and `tests/test_runner_boundary.py` pass; `redteam/run_all.py --strict` fails only the 2 F12 team-call cases; shadow seeds 7 and 21 score 0.965 with 0 unsafe; `tools/unseen_sim.py` shows 0 crashes, 0 missing rows and 0 moves to clear across 7 schema mutations; no `tools/perturb.py` rewrite moves a decision towards DIFFERENT_ENTITY.
 - [Spot check of 20 clears and 10 reviews](../REVIEW_NOTES.md) (historical, taken at 45ddc8c): three clears warrant checking the link between the screened holder and the approved identity check; all three are still clears today (see "Shared-account KYC checks" below). The practice score does not measure this risk across the unlabelled set.
 
+## How we score on the judges' metrics
+Measured with `tools/metrics.py`, which reads our predictions and a label file and computes exactly the figures the brief's judging
+reports. Definitions: an **unsafe clearance** is a `DIFFERENT_ENTITY` on a hit labelled `SAME_ENTITY` or `REVIEW` (the 60-point error);
+**false positives cleared** is the share of hits labelled `DIFFERENT_ENTITY` that we clear; **clearance precision** is the share of our
+clears labelled `DIFFERENT_ENTITY`; **same-entity recall** is the share of hits labelled `SAME_ENTITY` that we confirm; **review rate** is
+the share we send to `REVIEW`; **decision score** is 1 − cost / cost of reviewing everything, with the brief's costs (60 / 3 / 2).
+
+| Set | Hits | Unsafe clearances | False positives cleared | Clearance precision | Same-entity recall | Review rate | Decision score |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Official practice labels | 50 | **0** | 100.0% (28 of 28) | 100.0% (28 clears) | 100.0% (12 of 12) | 20.0% | 1.000 |
+| Shadow set, seed 7 | 559 | **0** | 95.3% (243 of 255) | 100.0% (243 clears) | 100.0% (126 of 126) | 34.0% | 0.965 |
+| Shadow set, seed 21 | 559 | **0** | 95.3% (243 of 255) | 100.0% (243 clears) | 100.0% (127 of 127) | 33.8% | 0.965 |
+| Baseline: review every practice hit | 50 | 0 | 0.0% | n/a (no clears) | 0.0% | 100.0% | 0.000 |
+
+On all 819 dev hits (no labels) the review rate is 28.1% (230 of 819). Every shadow miss is a `REVIEW` on a hit labelled
+`DIFFERENT_ENTITY` (cost 3, never unsafe); see "Shadow test set" below. The shadow generator shares authors with the system, so treat
+it as a check on unseen wording, not an independent benchmark. To reproduce:
+
+```sh
+system/run dev output/dev.jsonl
+for N in 7 21; do TRACK2_DEV=dev python3 tools/shadow.py gen /tmp/sh$N $N && system/run /tmp/sh$N /tmp/sh$N.out; done
+python3 tools/metrics.py output/dev.jsonl dev/practice_labels.jsonl \
+    /tmp/sh7.out /tmp/sh7/shadow_labels.jsonl /tmp/sh21.out /tmp/sh21/shadow_labels.jsonl --md
+```
+
 ## Hardening for the unseen set
 **Policy coverage.** `tests/test_policy.py` has 25 synthetic data rooms, one per rare situation, and all pass:
 - name + DOB agree but the countries differ → REVIEW, not SAME (the policy says so explicitly);
@@ -197,4 +222,5 @@ on the customer's own applicant, like Akin's three). Turned on, it moves 60 dev 
 - `TRACK2_DEV=<dev folder> python3 tools/shadow.py gen <dir> 7 && system/run <dir> <out> && python3 tools/shadow.py score <dir> <out>`: shadow test set.
 - `python3 tools/ablate.py dev`: which dev and practice decisions depend on each component.
 - `python3 tools/score.py output/dev.jsonl <data folder>/practice_labels.jsonl -v`: local cost score and reason checks.
+- `python3 tools/metrics.py <predictions> <labels> [...] [--md]`: the judges' metrics (unsafe clearances, false positives cleared, clearance precision, same-entity recall, review rate, decision score).
 
