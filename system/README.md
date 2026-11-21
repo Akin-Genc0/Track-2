@@ -24,7 +24,7 @@ Each customer fact is stored with the set of record IDs it came from. For exampl
 - **Name clears:** the check that gave the verified name.
 - **Confirms and reviews:** the sources of the agreeing facts (the DOB source and the sources of the shared countries).
 
-When several contradictions apply, the evidence is the union and the reason lists up to three of them. Reasons are generated from templates filled with this hit's own values: dates, countries, names and record IDs.
+When several contradictions apply, the evidence is the union and the reason lists up to three of them. Reasons are generated from templates filled with this hit's own values: dates, countries, names and record IDs. `explain.py` renders every reason and enforces the brief's two to four sentences: the deciding facts first, then, if only one deciding fact applies, a sentence on what else was compared or is missing (name, date of birth, countries). For example, "The customer is linked only to Singapore, United States but the hit is linked only to Pakistan. Apart from this, the customer's name agrees with the hit's name Abdul Rahman and the hit gives no date of birth to compare; the country difference is enough to clear the hit under the policy."
 
 ## Determinism
 There is no randomness, no model, no network and no clock. Every input is sorted by ID before iteration. Union-find roots are the smallest record ID. Ties between checks on the same date break on check ID. `run` sets `PYTHONHASHSEED=0`, and runs with other seeds give byte-identical output (checked). Any unexpected exception on a hit falls back to `REVIEW` instead of crashing, so a run always writes one line per hit.
@@ -111,13 +111,23 @@ synthetic wording, and the safe default when unsure is REVIEW:
 typo (not an identity check, so the record DOB still clears), and a customer day/month swap (05/12 vs 12/05). Changing them
 could cost practice points, so they are unchanged.
 
-**Effect on dev:** none. `output/dev.jsonl` is byte-identical before and after all of these fixes: the 819 dev hits never hit
-these patterns, so the fixes protect the unseen set at no dev cost. Practice is still 50/50, 0 unsafe, codes, customers and
+**Effect on dev:** none. Decisions, codes, customers and evidence in `output/dev.jsonl` are identical before and after all of
+these fixes (the file was byte-identical until the reason wording below): the 819 dev hits never hit these patterns, so the
+fixes protect the unseen set at no dev cost. Practice is still 50/50, 0 unsafe, codes, customers and
 evidence 50/50; the 23 policy tests pass; no perturbation moves any decision towards DIFFERENT_ENTITY.
 
-**Reason renderer not wired.** `system/explain.py` (from the reasons audit, `audit/REASONS.md`) cites only the evidence for
-the chosen reason code. On the practice labels that alone lowers evidence agreement from 1.00 to 0.96 (H-13E1CF, H-CF173B,
-H-D9BBCC, whose references cite every contradiction), so we kept the current templates and left the renderer unintegrated.
+**Reason renderer.** `system/explain.py` came from the reasons audit (`audit/REASONS.md`). Its first design cited only the
+evidence for the chosen reason code; on the practice labels that alone lowered evidence agreement from 1.00 to 0.96 (H-13E1CF,
+H-CF173B, H-D9BBCC, whose references cite every contradiction). It is now wired in with decide.py choosing the evidence as
+before, and it guarantees two to four sentences. Before, 358 of 819 dev reasons were a single sentence; now none are.
+
+**Shared-account KYC checks (team call, switch off).** Akin's spot check (`REVIEW_NOTES.md`) flagged H-006E36, H-FE1415 and
+H-E954EE: the customer's own record name agrees with the hit, but the approved check gives another given name with the same
+surname (record Joseph Ferrante, check MARIA MEGAN FERRANTE), which looks like a relative's check. `DOUBTFUL_LINK_REVIEW` in
+decide.py sends that pattern to REVIEW instead of clearing on the verified name. It is **off**: the practice labels clear exactly
+this pattern (H-2808BE record Ridwan Azeez / check CHINEDU AZEEZ, H-EDBB79, H-380854, all with one account holder and the check
+on the customer's own applicant, like Akin's three). Turned on, it moves 60 dev clears to REVIEW and practice drops to 46/50
+(score 1.000 → 0.889), so the labels treat "verified beats declared" literally here.
 
 ## Three cases
 1. **Clear mismatch: H-D861DA → DIFFERENT_ENTITY / DOB_MISMATCH.** The alert's account ACC-A82365 is a joint account (CUS-804632 and CUS-902175), and the screened name and DOB pick CUS-804632. That customer's latest approved identity check is an onboarding note, NOTE-8548C1, giving a DOB of 1979-11-08. The hit has no `dobs` field, but its profile notes give an age at a date, so it was born in 1976 or 1977. 1979 is more than one year outside both years, so the hit is cleared, citing NOTE-8548C1.
