@@ -100,6 +100,21 @@ def date_lt(a, b):
     return a_hi < b_lo
 
 
+_COMPANY_KIND = re.compile(r"compan|corp|organi[sz]|entity|business|firm|vessel|ship|aircraft|bank|trust|partnership|fund|foundation|"
+                           r"agency|government|enterprise|institution|association|\b(?:llc|ltd|inc|plc)\b")
+_PERSON_KIND = re.compile(r"individual|person|natural|human")
+
+
+def entity_kind(t):
+    """'company', 'individual', or None when the type is blank or unfamiliar (unknown is never a type contradiction)."""
+    t = fold(t or "").strip()
+    if _PERSON_KIND.search(t):
+        return "individual"
+    if _COMPANY_KIND.search(t):
+        return "company"
+    return None
+
+
 # ----------------------------------------------------------------------------- names
 _TRANS = str.maketrans({"ł": "l", "Ł": "L", "ø": "o", "Ø": "O", "æ": "ae", "Æ": "AE", "ß": "ss", "đ": "d", "Đ": "D",
                         "ı": "i", "œ": "oe", "Œ": "OE", "þ": "th", "ð": "d"})

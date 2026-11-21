@@ -4,7 +4,7 @@ One person's facts from all their records: names, declared and verified DOB, ver
 Verified beats declared: the most recent APPROVED identity check (KYC provider or onboarding note) wins."""
 import re
 from data import as_text
-from textutil import parse_date, find_dates, fold
+from textutil import parse_date, find_dates, fold, entity_kind
 from countries import norm_country, countries_in_text, countries_in_value
 
 APPROVED = {"approved", "passed", "pass", "clear", "cleared", "verified", "success", "successful", "accepted"}
@@ -156,6 +156,7 @@ class Profile:
         recs = [C[r] for r in self.records]
         prim = C[self.primary]
         self.company = idx.is_company(prim.get("entity_type"))
+        self.type_known = entity_kind(as_text(prim.get("entity_type"))) is not None
         self.entity_type = "Company" if self.company else "Individual"
         # names on records
         self.record_names = []          # (name, rid)

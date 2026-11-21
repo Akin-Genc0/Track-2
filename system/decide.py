@@ -76,7 +76,7 @@ class Decider:
         cust_c = set(prof.countries)
 
         # type
-        if prof.company != hit.company:
+        if prof.company != hit.company and prof.type_known and hit.type_known:
             contra["ENTITY_TYPE_MISMATCH"] = (
                 f"The customer is {'a company' if prof.company else 'an individual'} but the hit is {'a company' if hit.company else 'an individual'}.",
                 [prof.primary])

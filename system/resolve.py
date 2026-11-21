@@ -5,7 +5,7 @@ document number on approved KYC checks, transitively)."""
 import re
 from collections import defaultdict
 from data import as_text
-from textutil import parse_date, fold
+from textutil import parse_date, fold, entity_kind
 from countries import norm_country
 
 
@@ -90,8 +90,7 @@ class CustomerIndex:
 
     @staticmethod
     def is_company(t):
-        t = as_text(t).lower()
-        return t.startswith("compan") or t in ("organisation", "organization", "entity", "business", "legal entity")
+        return entity_kind(as_text(t)) == "company"
 
     def block_key(self, p):
         g = self.m.group_of.get(p)

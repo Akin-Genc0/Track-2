@@ -3,7 +3,7 @@ Names/aliases, entity type, countries tied to the hit, possible birth dates (dob
 profile notes, else qualifying web search results), earliest dated report, date of death."""
 import re
 from data import as_text, as_list, as_dict_list
-from textutil import parse_date, find_dates, fold, name_parts
+from textutil import parse_date, find_dates, fold, name_parts, entity_kind
 from countries import norm_country, countries_in_text, _key, SUBNATIONAL, SUBNATIONAL_AMBIG, NOT_COUNTRIES
 
 LISTING_PHRASES = [
@@ -109,8 +109,9 @@ class HitFacts:
     def __init__(self, hit, matcher, search_index):
         self.hit = hit
         self.id = as_text(hit.get("hit_id"))
-        et = as_text(hit.get("entity_type")).lower()
-        self.company = et.startswith("compan") or et in ("organisation", "organization", "entity", "vessel", "business")
+        kind = entity_kind(as_text(hit.get("entity_type")))
+        self.company = kind == "company"
+        self.type_known = kind is not None
         self.entity_type = "Company" if self.company else "Individual"
         self.name = as_text(hit.get("name"))
         self.aliases = as_list(hit.get("aliases"))
