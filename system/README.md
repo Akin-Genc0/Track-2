@@ -116,6 +116,25 @@ these fixes (the file was byte-identical until the reason wording below): the 81
 fixes protect the unseen set at no dev cost. Practice is still 50/50, 0 unsafe, codes, customers and
 evidence 50/50; the 23 policy tests pass; no perturbation moves any decision towards DIFFERENT_ENTITY.
 
+**Shadow test set (formats dev never shows).** `tools/shadow.py gen <dir> <seed>` builds a 559-hit policy-labelled data room
+from a separate generator (findings in `redteam/SHADOW_FINDINGS.md`); `tools/shadow.py score <dir> <predictions>` scores it.
+Its 92 "hard" hits use formats that never occur in dev. Before our fixes they gave 23 unsafe clears per seed, all from one
+cause: a country string the gazetteer could not read was dropped, and LOCATION_MISMATCH fired on the countries left. The F4
+country work above already removed all 23. This pass added: native and short country names (Polska, Sverige, Nederland, Misr,
+KSA, the Emirates, the States, U.S., U.K.…); qualifiers like "(Islamic Republic of)"; every country an address names when its
+last part is not a country; a residence note that says where someone lived or worked but names no known country blocks a location clear;
+only "expired" (not "expires 2031-05-12") rejects a KYC note; and more age forms ("Smith, 45, was", "(45)", "now 45",
+"a man of 45", "aged forty-two", "put the age of X at 39."; probes in `tests/test_ages.py`).
+
+| shadow seed | before (hard slice) | after: whole set | unsafe |
+|---|---|---|---|
+| 7 | 23 unsafe, score −8.3 | 547/559 correct, score 0.965 | 0 |
+| 21 | 23 unsafe, score −8.2 | 547/559 correct, score 0.965 | 0 |
+
+The 12 remaining misses per seed are all REVIEW where the label is DIFFERENT (cost 3 each, never unsafe): death dates written
+only in profile notes (we do not clear on a death date parsed from free text) and lower-case verified names (by design: a lower-case name in a note never clears on name,
+item 5 under "Fixes from this pass"). The generator and the system share authors, so the in-distribution part is optimistic; dev output is unchanged.
+
 **Reason renderer.** `system/explain.py` came from the reasons audit (`audit/REASONS.md`). Its first design cited only the
 evidence for the chosen reason code; on the practice labels that alone lowered evidence agreement from 1.00 to 0.96 (H-13E1CF,
 H-CF173B, H-D9BBCC, whose references cite every contradiction). It is now wired in with decide.py choosing the evidence as
@@ -150,5 +169,8 @@ on the customer's own applicant, like Akin's three). Turned on, it moves 60 dev 
 - `python3 tests/test_policy.py`: 23 synthetic rare-situation policy tests.
 - `python3 tools/perturb.py <data folder> [variant…]`: the rewording test above.
 - `python3 redteam/run_all.py --strict`: 48 adversarial synthetic cases (2 open, both F12).
+- `python3 tests/test_ages.py`: age-cue probes (real ages read, counts and money not).
+- `python3 tools/shadow.py gen <dir> 7 && system/run <dir> <out> && python3 tools/shadow.py score <dir> <out>`: shadow test set.
+- `python3 tools/ablate.py data/dev`: which dev and practice decisions depend on each component.
 - `python3 tools/score.py output/dev.jsonl <data folder>/practice_labels.jsonl -v`: local cost score and reason checks.
 
