@@ -1,7 +1,8 @@
 """Workstream 4 - decisioning per POLICY.md.
 Clear (DIFFERENT_ENTITY) only on a contradiction; confirm (SAME_ENTITY) only on agreement; otherwise REVIEW.
 Every decision carries one reason code, the deciding record IDs and a factual 2-4 sentence reason."""
-from textutil import fmt_date, date_lt
+import re
+from textutil import fmt_date, date_lt, fold
 
 CLEAR_PRIORITY = ["ENTITY_TYPE_MISMATCH", "DECEASED", "TEMPORAL_IMPOSSIBILITY", "DOB_MISMATCH", "NAME_MISMATCH_VERIFIED", "LOCATION_MISMATCH"]
 
@@ -40,6 +41,11 @@ def max_age_at(dob, when):
         elif when[1] == dob[1] and dob[2] and when[2] and when[2] < dob[2]:
             y -= 1
     return y
+
+
+def latin(name):
+    """At least two Latin letters once accents are folded."""
+    return len(re.findall(r"[a-z]", fold(name or ""))) >= 2
 
 
 def sentence_join(parts):
@@ -128,7 +134,9 @@ class Decider:
         if prof.verified_name:
             vname, vsrc = prof.verified_name
             vparts = self.m.parts(vname, prof.company)
-            if (prof.company or len(vparts) >= 2) and not n_agree and not getattr(prof, "verified_name_weak", False):
+            # names in different scripts cannot be compared: 'ИВАН ПЕТРОВ' vs 'Petrov, Ivan' is no evidence either way
+            comparable = latin(vname) and any(latin(n) for n in hit.names)
+            if (prof.company or len(vparts) >= 2) and not n_agree and comparable and not getattr(prof, "verified_name_weak", False):
                 contra["NAME_MISMATCH_VERIFIED"] = (
                     f"The customer's verified name is {vname} ({vsrc}), which does not match the hit's name {hit.name}.", [vsrc])
         # location
