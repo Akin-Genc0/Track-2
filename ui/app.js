@@ -9,8 +9,8 @@
   };
 
   const DECISION_LABEL = {
-    DIFFERENT_ENTITY: "Cleared",
-    SAME_ENTITY: "True match",
+    DIFFERENT_ENTITY: "Different entity",
+    SAME_ENTITY: "Same entity",
     REVIEW: "Review",
   };
   const DECISION_CLASS = {
@@ -26,9 +26,53 @@
     selectedId: null,
     selectedCustomer: null,
     pollTimer: null,
+    view: "queue",
+    screen: null,
   };
 
   const $ = (id) => document.getElementById(id);
+
+  const ICON = {
+    all: '<path d="M4 6h16M4 12h16M4 18h10"/>',
+    same: '<path d="M12 3 4 6v6c0 4.4 3.4 8 8 9 4.6-1 8-4.6 8-9V6z"/><path d="M12 8v4M12 15.5h.01"/>',
+    review: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.5 3.6-5.5 7-5.5s6.2 2 7 5.5"/>',
+    diff: '<circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/>',
+    pending: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    labeled: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h4"/>',
+    disagree: '<path d="M7 7h10M7 7l3-3M7 7l3 3M17 17H7M17 17l-3-3M17 17l-3 3"/>',
+    scan: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8M8 10.5h5M10.5 8v5"/>',
+    note: '<path d="M5 4h10l4 4v12H5z"/><path d="M9 12h6M9 16h4"/>',
+    map: '<circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="5" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M7.5 12h4l5-6.5M11.5 12l5 6.5"/>',
+    alert: '<path d="M12 4 3 19h18z"/><path d="M12 10v4M12 17h.01"/>',
+    link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+    person: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.5 3.6-5.5 7-5.5s6.2 2 7 5.5"/>',
+    idcard: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6 16c.6-1.5 1.7-2 3-2s2.4.5 3 2M14 10h4M14 13h3"/>',
+    globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z"/>',
+    list: '<path d="M12 3 4 6v6c0 4.4 3.4 8 8 9 4.6-1 8-4.6 8-9V6z"/><path d="M9 12h6"/>',
+  };
+  const svg = (k, cls = "ico") => {
+    const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("class", cls); s.setAttribute("aria-hidden", "true");
+    s.innerHTML = ICON[k] || ""; return s;
+  };
+  const nf = new Intl.NumberFormat("en-GB");
+  const NOTES_KEY = "fathom.analystNotes.v1";
+  function loadNotes() {
+    try { return JSON.parse(localStorage.getItem(NOTES_KEY) || "{}") || {}; } catch (_) { return {}; }
+  }
+  function saveNotes(n) {
+    try { localStorage.setItem(NOTES_KEY, JSON.stringify(n)); return true; } catch (_) { return false; }
+  }
+  function noteCount() {
+    return Object.values(loadNotes()).reduce((a, l) => a + l.length, 0);
+  }
+  const PAGE = {
+    queue: ["Review queue", "Every watchlist hit with the system’s decision and the records behind it"],
+    screen: ["Screen a person", "Check one name against every watchlist entry before or after onboarding"],
+    notes: ["Analyst notes", "Information you’ve added to cases, kept in this browser"],
+    map: ["Link map", "How one alert’s records connect, from the screened customer to the decision"],
+  };
+
 
   function el(tag, attrs, ...children) {
     const n = document.createElement(tag);
@@ -449,27 +493,59 @@
   function renderStats(bundle) {
     const s = computeStats(bundle);
     const c = s.counts;
+    const total = c.total || 1;
+    const share = (n) => `${Math.round((n / total) * 100)}%`;
+    const kpi = (cls, label, value, note, badge) =>
+      el("div", { class: "kpi " + cls },
+        el("div", { class: "kpi-top" }, el("span", { class: "kpi-label" }, label), badge ? el("span", { class: "kpi-badge" }, badge) : null),
+        el("div", { class: "kpi-value" }, value),
+        el("div", { class: "kpi-note" }, note)
+      );
+    const labs = Object.values(bundle.labels || {});
+    const predMap = predictions(bundle);
+    const dots = el("div", { class: "lab-dots", "aria-hidden": "true" },
+      ...labs.map((l) => {
+        const p = predMap[l.hit_id];
+        const st = !p || !p.decision ? "none" : p.decision === l.decision ? "ok" : (p.decision === "DIFFERENT_ENTITY" ? "unsafe" : "off");
+        return el("i", { class: st, title: `${l.hit_id}: label ${DECISION_LABEL[l.decision] || l.decision}${p && p.decision ? ", system " + (DECISION_LABEL[p.decision] || p.decision) : ""}` });
+      })
+    );
+    const agree = labs.filter((l) => predMap[l.hit_id] && predMap[l.hit_id].decision === l.decision).length;
     const scoreTitle = s.sample
-      ? "Decision score on the 50 practice labels (sample predictions copy those labels, so this will read 100% until real output is loaded)"
-      : "Decision score on practice labels: share of review-baseline cost saved";
+      ? "Sample predictions copy the practice labels, so this reads 100% until real output is loaded"
+      : "Share of the review-everything cost saved on the practice labels (an unsafe clear costs 60)";
     $("stats").replaceChildren(
-      el("div", { class: "stat" }, el("div", { class: "k" }, "Hits"), el("div", { class: "v" }, String(c.total), el("em", null, `${c.pending} pending`))),
-      el("div", { class: "stat cleared" }, el("div", { class: "k" }, "Cleared"), el("div", { class: "v" }, String(c.DIFFERENT_ENTITY))),
-      el("div", { class: "stat match" }, el("div", { class: "k" }, "True match"), el("div", { class: "v" }, String(c.SAME_ENTITY))),
-      el("div", { class: "stat review" }, el("div", { class: "k" }, "Review"), el("div", { class: "v" }, String(c.REVIEW))),
-      el("div", { class: "stat score", title: scoreTitle },
-        el("div", { class: "k" }, "Practice score"),
-        el("div", { class: "v" }, s.decisionScore == null ? "—" : fmtPct(s.decisionScore), el("em", null, s.labeled ? (s.labeled + " labeled") : "no labels"))
-      ),
-      el("div", { class: "stat" + (s.unsafe ? " danger" : ""), title: "Predicted DIFFERENT_ENTITY when the label is SAME_ENTITY or REVIEW" },
-        el("div", { class: "k" }, "Unsafe clears"),
-        el("div", { class: "v" }, s.labeled ? String(s.unsafe) : "—")
+      kpi("k-total", "Hits reviewed", nf.format(c.total - c.pending), c.pending ? `${c.pending} still pending` : `Across ${nf.format(Object.keys(bundle.alerts || {}).length)} alerts`),
+      kpi("k-same", "Same entity", nf.format(c.SAME_ENTITY), "Sent to compliance", share(c.SAME_ENTITY)),
+      kpi("k-review", "Review", nf.format(c.REVIEW), "Routed to an analyst", share(c.REVIEW)),
+      kpi("k-diff", "Different entity", nf.format(c.DIFFERENT_ENTITY), "False positives closed", share(c.DIFFERENT_ENTITY)),
+      el("div", { class: "kpi k-score", title: scoreTitle },
+        el("div", null,
+          el("div", { class: "kpi-top" }, el("span", { class: "kpi-label" }, "Practice check")),
+          el("div", { class: "kpi-value" }, s.decisionScore == null ? "—" : fmtPct(s.decisionScore)),
+          el("div", { class: "kpi-note" }, s.labeled ? `${agree} of ${s.labeled} match the labels` : "No practice labels loaded")
+        ),
+        el("div", { class: "score-side" },
+          dots,
+          el("div", { class: "unsafe" + (s.unsafe ? " bad" : "") },
+            el("span", { class: "u-n" }, s.labeled ? String(s.unsafe) : "—"),
+            el("span", null, s.unsafe === 1 ? "unsafe clear" : "unsafe clears")
+          )
+        )
       ),
     );
     const live = !s.sample && Object.keys(predictions(bundle)).length;
     const pill = $("mode-pill");
-    pill.textContent = live ? "Live output" : "Sample";
+    pill.textContent = live ? "Live output" : "Sample data";
     pill.className = "pill " + (live ? "pill-live" : "pill-sample");
+    const src = $("source-sub");
+    if (src) {
+      const n = Object.keys(predictions(bundle)).length;
+      const from = (bundle.meta && bundle.meta.prediction_source) || "output/dev.jsonl";
+      src.textContent = live ? `${nf.format(n)} decisions from ${String(from).replace(/^\/track2\//, "")}` : "Practice-label answers, not the system";
+      const chg = $("btn-change-data");
+      if (chg) chg.hidden = state.dataSource !== "browser";
+    }
     const banner = $("sample-banner");
     const showBanner = !live;
     banner.hidden = !showBanner;
@@ -478,69 +554,102 @@
 
   function renderFilters() {
     const f = state.filter;
-    const chips = [
-      ["ALL", "All", ""],
-      ["DIFFERENT_ENTITY", "Cleared", "cleared"],
-      ["SAME_ENTITY", "True match", "match"],
-      ["REVIEW", "Review", "review"],
-      ["PENDING", "Pending", ""],
-      ["LABELED", "Labeled", ""],
-      ["DISAGREE", "Disagrees", ""],
+    const bundle = state.bundle;
+    const s = computeStats(bundle);
+    const predMap = predictions(bundle);
+    const labs = Object.values(bundle.labels || {});
+    const disagreeN = labs.filter((l) => predMap[l.hit_id] && predMap[l.hit_id].decision && predMap[l.hit_id].decision !== l.decision).length;
+    const groups = [
+      ["Decisions", [
+        ["ALL", "All hits", "all", s.counts.total],
+        ["SAME_ENTITY", "Same entity", "same", s.counts.SAME_ENTITY],
+        ["REVIEW", "Review", "review", s.counts.REVIEW],
+        ["DIFFERENT_ENTITY", "Different entity", "diff", s.counts.DIFFERENT_ENTITY],
+        ...(s.counts.pending ? [["PENDING", "Pending", "pending", s.counts.pending]] : []),
+      ]],
+      ["Practice set", [
+        ["LABELED", "Labeled only", "labeled", labs.length],
+        ["DISAGREE", "Disagreements", "disagree", disagreeN],
+      ]],
+      ["Tools", [
+        ["VIEW:screen", "Screen a person", "scan", null],
+        ["VIEW:map", "Link map", "map", null],
+        ["VIEW:notes", "Analyst notes", "note", noteCount()],
+      ]],
     ];
     const box = $("filters");
     box.replaceChildren();
-    for (const [key, label, cls] of chips) {
-      let on = false;
-      if (key === "LABELED") on = f.labeled;
-      else if (key === "DISAGREE") on = f.disagree;
-      else on = f.decision === key;
-      box.appendChild(
-        el("button", {
+    for (const [title, items] of groups) {
+      box.appendChild(el("div", { class: "nav-title" }, title));
+      for (const [key, label, icon, count] of items) {
+        const isView = key.startsWith("VIEW:");
+        const toggle = key === "LABELED" || key === "DISAGREE";
+        const on = isView ? state.view === key.slice(5)
+          : key === "LABELED" ? f.labeled && state.view === "queue"
+          : key === "DISAGREE" ? f.disagree && state.view === "queue"
+          : f.decision === key && state.view === "queue";
+        const btn = el("button", {
           type: "button",
-          class: "chip" + (on ? " on" : "") + (cls ? " " + cls : ""),
+          class: "nav-item" + (on ? " on" : "") + " n-" + icon,
+          "aria-pressed": on ? "true" : "false",
           onclick: () => {
+            if (isView) { state.view = key.slice(5); render(); return; }
+            state.view = "queue";
             if (key === "LABELED") f.labeled = !f.labeled;
             else if (key === "DISAGREE") f.disagree = !f.disagree;
             else f.decision = key;
             render();
           },
-        }, label)
-      );
+        }, svg(icon), el("span", null, label),
+          toggle ? el("span", { class: "toggle" + (on ? " on" : "") }, el("i"))
+            : count == null ? null : el("span", { class: "count" }, nf.format(count || 0)));
+        if (toggle) btn.appendChild(el("span", { class: "count sub" }, String(count || 0)));
+        box.appendChild(btn);
+      }
     }
   }
 
   function renderQueue(rows) {
-    $("queue-meta").textContent = `${rows.length} in queue`;
+    const f = state.filter;
+    $("queue-meta").replaceChildren(
+      el("span", null, f.decision === "ALL" && !f.labeled && !f.disagree && !f.q ? `${nf.format(rows.length)} hits` : `${nf.format(rows.length)} of ${nf.format(Object.keys(state.bundle.hits).length)} hits`),
+    );
     const box = $("queue");
     box.replaceChildren();
+    if (!rows.length) {
+      box.appendChild(el("div", { class: "queue-empty" }, "No hits match. Clear the search or pick another filter."));
+      return;
+    }
     for (const row of rows) {
       const cls = DECISION_CLASS[row.decision] || "pending";
+      const on = row.hit.hit_id === state.selectedId;
       const item = el(
         "div",
         {
-          class: "queue-item" + (row.hit.hit_id === state.selectedId ? " on" : ""),
+          class: "queue-item" + (on ? " on" : ""),
           role: "option",
-          "aria-selected": row.hit.hit_id === state.selectedId ? "true" : "false",
+          tabindex: "-1",
+          "aria-selected": on ? "true" : "false",
           onclick: () => selectHit(row.hit.hit_id),
         },
-        el("div", { class: "q-bar " + cls }),
         el("div", null,
           el("div", { class: "q-name" }, row.hit.name || "Unnamed"),
+          el("div", { class: "q-cust" }, "Customer ", el("b", null, row.alert.customer_name || "unknown")),
           el("div", { class: "q-sub" },
-            el("span", null, row.hit.hit_id),
-            el("span", { class: "cat" }, row.cat)
+            el("span", { class: "mono" }, row.hit.hit_id),
+            el("span", null, row.cat),
+            row.lab ? el("span", { class: "flag" + (row.disagree ? " bad" : "") }, row.disagree ? "Label differs" : "Labeled") : null,
+            (state._notes && state._notes[row.hit.hit_id] && state._notes[row.hit.hit_id].length) ? el("span", { class: "flag note" }, "Note") : null
           )
         ),
         el("div", { class: "q-right" },
-          el("span", { class: "mini " + cls }, row.decision === "PENDING" ? "Pending" : DECISION_LABEL[row.decision] || row.decision),
-          row.lab ? el("span", { class: "flag" + (row.disagree ? " bad" : "") }, row.disagree ? "Label differs" : "Labeled") : null,
-          el("span", { class: "q-score" }, row.hit.match_score != null ? String(row.hit.match_score) : "")
+          el("span", { class: "dec " + cls }, row.decision === "PENDING" ? "Pending" : DECISION_LABEL[row.decision] || row.decision)
         )
       );
       box.appendChild(item);
     }
-    const on = box.querySelector(".queue-item.on");
-    if (on) on.scrollIntoView({ block: "nearest" });
+    const sel = box.querySelector(".queue-item.on");
+    if (sel) sel.scrollIntoView({ block: "nearest" });
   }
 
   function selectHit(id, customerId) {
@@ -731,7 +840,10 @@
     }
     const re = new RegExp("(" + ids.map((i) => i.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")");
     for (const part of raw.split(re)) {
-      if (ids.includes(part)) wrap.appendChild(el("span", { class: "idchip" }, part));
+      if (ids.includes(part)) wrap.appendChild(el("button", { type: "button", class: "idchip", title: "Show this record", onclick: () => {
+        const card = document.querySelector(`.ev-card[data-ev="${part}"]`);
+        if (card) { card.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); card.classList.remove("flash"); void card.offsetWidth; card.classList.add("flash"); }
+      } }, part));
       else wrap.appendChild(document.createTextNode(part));
     }
     return wrap;
@@ -769,7 +881,7 @@
 
   function evidenceCard(id, bundle, cited) {
     const found = findRecord(id, bundle);
-    const card = el("div", { class: "ev-card" + (cited ? " cited" : "") });
+    const card = el("div", { class: "ev-card" + (cited ? " cited" : ""), "data-ev": id });
     if (!found) {
       card.append(
         el("div", { class: "ev-top" }, el("div", { class: "ev-id" }, id), el("div", { class: "ev-kind" }, "Not in bundle"))
@@ -777,7 +889,7 @@
       return card;
     }
     const { kind, rec } = found;
-    card.append(el("div", { class: "ev-top" }, el("div", { class: "ev-id" }, id), el("div", { class: "ev-kind" }, kind)));
+    card.append(el("div", { class: "ev-top" }, el("div", { class: "ev-id mono" }, id), el("div", { class: "ev-kind" }, kind), cited ? el("span", { class: "ev-cited" }, "Cited") : null));
     if (kind === "Customer") {
       card.append(evRows([
         ["Name", rec.full_name], ["Preferred", rec.preferred_name], ["DOB", rec.dob],
@@ -873,77 +985,76 @@
     });
     const kyc = latestApprovedKyc(personKyc.length ? personKyc : cse.kyc_ids, bundle);
 
-    const head = el("div", { class: "case-head" },
-      el("div", null,
-        el("div", { class: "ids" },
-          el("span", null, el("b", null, "HIT"), hit.hit_id),
-          el("span", null, el("b", null, "ALERT"), hit.alert_id),
-          alert.screened_at ? el("span", null, el("b", null, "SCREENED"), alert.screened_at) : null,
-          hit.match_score != null ? el("span", null, el("b", null, "SCORE"), String(hit.match_score)) : null
-        ),
-        el("div", { class: "case-title" },
-          hit.name || "Unnamed list entry",
-          el("small", null, "Screened customer: " + (alert.customer_name || "Unknown"))
-        ),
-        el("div", { class: "badges" },
-          ...asList(hit.categories).map((c) => {
-            const k = fold(c);
-            const cls = k.includes("sanction") ? "sanctions" : k === "pep" ? "pep" : k.includes("enforce") ? "enforcement" : k.includes("adverse") ? "adverse" : "";
-            return el("span", { class: "badge " + cls }, c);
-          }),
-          hit.entity_type ? el("span", { class: "badge" }, hit.entity_type) : null,
-          hit.gender ? el("span", { class: "badge" }, hit.gender) : null
-        )
+    const fmtLong = (d) => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d || ""));
+      if (!m) return d;
+      return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+    };
+    const meta = (k, v, mono) => v == null || v === "" ? null : el("span", { class: "meta" }, el("span", { class: "meta-k" }, k), el("span", { class: mono ? "mono" : "" }, v));
+    const head = el("div", null,
+      el("div", { class: "case-meta" },
+        meta("Hit", hit.hit_id, true),
+        meta("Alert", hit.alert_id, true),
+        meta("Screened", fmtLong(alert.screened_at)),
+        meta("Match score", hit.match_score != null ? String(hit.match_score) : null, true),
+        el("button", { type: "button", class: "map-open", onclick: () => { state.mapHit = hit.hit_id; state.mapMode = "case"; state.mapPos = null; state.view = "map"; render(); } }, svg("map"), "Link map")
       ),
-      el("div", { class: "stamp " + dcls },
-        el("div", { class: "s-k" }, "Decision"),
-        el("div", { class: "s-v" }, decision === "PENDING" ? "Pending" : DECISION_LABEL[decision] || decision),
-        el("div", { class: "s-c" }, reasonCode || "No reason code")
+      el("h2", { class: "case-title" }, hit.name || "Unnamed list entry"),
+      el("div", { class: "case-sub" },
+        el("span", null, "Screened customer ", el("b", null, alert.customer_name || "unknown")),
+        ...asList(hit.categories).map((c) => el("span", { class: "tag" }, c))
       )
     );
-
-    const parts = [head];
+    const decisionCard = el("section", { class: "decision " + dcls },
+      el("div", { class: "d-top" },
+        el("div", null,
+          el("div", { class: "d-label" }, "Decision"),
+          el("div", { class: "d-value" }, decision === "PENDING" ? "Pending" : DECISION_LABEL[decision] || decision),
+          el("div", { class: "d-what" }, {
+            SAME_ENTITY: "This hit is the customer. Escalate to compliance.",
+            DIFFERENT_ENTITY: "A fact contradicts the hit, so it was cleared as a false positive.",
+            REVIEW: "The records can’t settle it, so an analyst should look.",
+            PENDING: "No decision has been produced for this hit yet.",
+          }[decision] || "")
+        ),
+        el("div", { class: "d-code" },
+          el("span", { class: "mono" }, reasonCode || "No reason code"),
+          pred && pred.customer_record_id ? el("span", { class: "d-cust" }, "Customer record ", el("span", { class: "mono" }, String(pred.customer_record_id))) : null
+        )
+      ),
+      highlightReason(pred && pred.reason, pred && pred.evidence),
+      codeMeta && codeMeta.when ? el("div", { class: "d-rule" }, el("span", null, "Rule"), codeMeta.when) : null
+    );
+    const parts = [head, decisionCard];
 
     if (pred && isSample(bundle, pred) && pred._sample_source === "practice_labels") {
-      parts.push(el("div", { class: "label-row" },
-        el("div", null, el("div", { class: "lab-k" }, "Source"), " Sample copied from practice labels")
-      ));
+      parts.push(el("div", { class: "label-row" }, el("span", { class: "lab-k" }, "Source"), el("span", null, "Sample copied from the practice labels")));
     }
 
     if (lab) {
       const disagree = pred && pred.decision && pred.decision !== lab.decision;
-      const row = el("div", { class: "label-row " + (pred && pred.decision ? (disagree ? "disagree" : "agree") : "") },
-        el("div", null, el("div", { class: "lab-k" }, "Practice label"), `${DECISION_LABEL[lab.decision] || lab.decision}  ·  ${(lab.reason_codes || []).join(", ")}`),
-        pred && pred.decision
-          ? el("div", null, el("div", { class: "lab-k" }, disagree ? "Disagrees with system" : "Agrees with system"), `${DECISION_LABEL[pred.decision]}  ·  ${pred.reason_code || ""}`)
-          : el("div", null, el("div", { class: "lab-k" }, "System"), "No prediction yet")
-      );
-      parts.push(row);
+      parts.push(el("div", { class: "label-row " + (pred && pred.decision ? (disagree ? "disagree" : "agree") : "") },
+        el("span", { class: "lab-icon" }, svg(disagree ? "disagree" : "labeled")),
+        el("span", { class: "lab-k" }, disagree ? "Disagrees with the practice label" : pred && pred.decision ? "Matches the practice label" : "Practice label"),
+        el("span", null, `${DECISION_LABEL[lab.decision] || lab.decision}`, el("span", { class: "mono lab-code" }, (lab.reason_codes || []).join(", ")))
+      ));
     }
+
+    parts.push(notesPanel(hit.hit_id));
 
     if (uniqueCust.length > 1) {
       parts.push(el("div", { class: "person-switch" },
-        el("span", { style: "color:var(--text-faint);font-size:11px;letter-spacing:.1em;text-transform:uppercase;align-self:center" }, "Customer record"),
-        ...uniqueCust.map((id) => {
+        el("span", { class: "ps-k" }, `${uniqueCust.length} customer records fit this alert`),
+        el("div", { class: "seg" }, ...uniqueCust.map((id) => {
           const c = bundle.customers[id];
           return el("button", {
             type: "button",
             class: id === state.selectedCustomer ? "on" : "",
             onclick: () => { state.selectedCustomer = id; render(); },
-          }, `${id} · ${c && c.full_name ? c.full_name : "record"}`);
-        })
+          }, el("span", { class: "mono" }, id), c && c.full_name ? " " + c.full_name : "");
+        }))
       ));
     }
-
-    const reasonWrap = el("div", { class: "reason-block" },
-      el("h3", null, "Reason" + (codeMeta ? `  ·  ${reasonCode}` : "")),
-      highlightReason(pred && pred.reason, pred && pred.evidence),
-      codeMeta ? el("div", { style: "margin-top:10px;color:var(--text-dim);font-size:12px" }, codeMeta.when) : null,
-      pred && pred.customer_record_id
-        ? el("div", { style: "margin-top:8px;font-family:var(--mono);font-size:12px;color:var(--text-dim)" }, "Resolved customer record: " + String(pred.customer_record_id))
-        : null
-    );
-    parts.push(reasonWrap);
 
     // Comparison table (paper)
     const noteIdsForCompare = [];
@@ -956,50 +1067,34 @@
       if (String(id).startsWith("NOTE-") && !noteIdsForCompare.includes(id)) noteIdsForCompare.push(id);
     }
     const rows = compareRows(cust, hit, kyc, alert, bundle, noteIdsForCompare);
-    const grid = el("div", { class: "compare" });
-    const table = el("div", null);
     const screenedBits = [
-      alert.customer_name && `Name ${alert.customer_name}`,
-      alert.dob && `DOB ${alert.dob}`,
-      alert.country && `Country ${alert.country}`,
-      alert.city && `City ${alert.city}`,
-      alert.account_ref && `Account ${alert.account_ref}`,
-      alert.login_handle && `Login ${alert.login_handle}`,
-      alert.email && `Email ${alert.email}`,
-    ].filter(Boolean);
-    table.appendChild(el("div", { class: "screened" },
-      el("b", null, "As screened.  "),
-      screenedBits.join("  ·  ") || "No screened identity fields."
-    ));
-    const header = el("div", { class: "field-grid" },
-      el("div", { class: "fh" }, "Field"),
-      el("div", { class: "fh" }, "Customer" + (cust ? `  ·  ${cust.record_id}` : "  ·  unresolved")),
-      el("div", { class: "fh" }, "List entry  ·  " + hit.hit_id),
-      el("div", { class: "fh status" }, "Compare")
-    );
-    table.appendChild(header);
-    const statusWord = { agree: "Agree", conflict: "Conflict", unknown: "—" };
-    for (const r of rows) {
-      const line = el("div", { class: "field-grid row-" + r.status },
+      ["Name", alert.customer_name], ["Date of birth", alert.dob], ["Country", alert.country], ["City", alert.city],
+      ["Account", alert.account_ref, true], ["Login", alert.login_handle, true], ["Email", alert.email, true],
+    ].filter((b) => b[1]);
+    const statusWord = { agree: "Agrees", conflict: "Conflict", unknown: "Not compared" };
+    const table = el("section", { class: "compare" },
+      el("div", { class: "sec-head" },
+        el("h3", null, "Customer and list entry, side by side"),
+        el("div", { class: "screened" }, el("span", { class: "meta-k" }, "As screened"),
+          ...(screenedBits.length ? screenedBits.map(([k, v, mono]) => el("span", { class: "sc" }, `${k} `, el("span", { class: mono ? "mono" : "" }, v))) : [el("span", null, "No screened identity fields")]))
+      ),
+      el("div", { class: "field-grid fg-head" },
+        el("div", null, "Field"),
+        el("div", null, "Customer ", cust ? el("span", { class: "mono" }, cust.record_id) : el("span", { class: "missing" }, "unresolved")),
+        el("div", null, "List entry ", el("span", { class: "mono" }, hit.hit_id)),
+        el("div", { class: "status" }, "Check")
+      ),
+      ...rows.map((r) => el("div", { class: "field-grid row-" + r.status },
         el("div", { class: "fcell lab" }, r.label),
         el("div", { class: "fcell val" }, r.left),
         el("div", { class: "fcell val" }, r.right),
-        el("div", { class: "fcell status" }, el("div", { class: "status-pill " + r.status }, statusWord[r.status] || r.status))
-      );
-      table.appendChild(line);
-    }
-    grid.appendChild(table);
-    parts.push(el("div", { style: "margin: 4px 0 6px; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-faint)" }, "Side-by-side comparison"), grid);
-
-    if (kyc) {
-      parts.push(el("div", { style: "margin:-8px 0 16px; font-size:12px; color:var(--text-dim)" },
-        `Verified identity from approved check ${kyc.check_id} (${kyc.checked_at || "undated"}): ${kyc.verified_name || "—"}, ${kyc.verified_dob || "no DOB"}, document country ${kyc.document_country || "—"}.`
-      ));
-    } else if (!cust) {
-      parts.push(el("div", { style: "margin:-8px 0 16px; font-size:12px; color:var(--text-dim)" },
-        "No customer record is resolved for this alert in the review bundle. The left column uses screened details only."
-      ));
-    }
+        el("div", { class: "fcell status" }, el("span", { class: "status-pill " + r.status }, statusWord[r.status] || r.status))
+      )),
+      kyc
+        ? el("div", { class: "compare-foot" }, "Verified identity from approved check ", el("span", { class: "mono" }, kyc.check_id), ` on ${fmtLong(kyc.checked_at) || "an unknown date"}: ${kyc.verified_name || "no name"}, born ${kyc.verified_dob || "unknown"}, ${kyc.document_country || "no"} document`)
+        : (!cust ? el("div", { class: "compare-foot" }, "No customer record is resolved for this alert, so the customer column uses the screened details only") : null)
+    );
+    parts.push(table);
 
     // Evidence
     const cited = [...asList(pred && pred.evidence)];
@@ -1018,16 +1113,16 @@
     if (cust) addEv(cust.record_id);
     asList(cse.search_ids).slice(0, 6).forEach((id) => addEv(id));
 
-    const evPanel = el("div", { class: "panel", id: "evidence-panel" }, el("h3", null, "Evidence records"));
+    const evPanel = el("section", { class: "panel", id: "evidence-panel" },
+      el("div", { class: "sec-head" }, el("h3", null, "Evidence records"),
+        el("div", { class: "sec-note" }, "Records cited in the decision are marked. Click a highlighted ID in the reasoning to jump here")));
     if (!evIds.length) {
-      evPanel.appendChild(el("div", { style: "color:var(--text-dim)" }, "No evidence records attached to this hit yet."));
+      evPanel.appendChild(el("div", { class: "muted" }, "No evidence records are attached to this hit yet"));
     } else {
       const gridE = el("div", { class: "evidence-grid" });
       const citedSet = new Set(cited.length ? cited : asList(lab && lab.evidence));
-      for (const id of evIds) gridE.appendChild(evidenceCard(id, bundle, citedSet.has(id)));
-      evPanel.appendChild(el("div", { style: "color:var(--text-faint);font-size:12px;margin:-4px 0 10px" },
-        "Solid border and CITED badge mark IDs cited in the decision (or the practice label, if the system has not cited any)."
-      ));
+      const ordered = [...evIds].sort((a, b) => (citedSet.has(b) ? 1 : 0) - (citedSet.has(a) ? 1 : 0));
+      for (const id of ordered) gridE.appendChild(evidenceCard(id, bundle, citedSet.has(id)));
       evPanel.appendChild(gridE);
     }
     parts.push(evPanel);
@@ -1047,17 +1142,17 @@
 
     if (hit.profile_notes || hit.details || (hit.relationships && hit.relationships.length) || (hit.sources && hit.sources.length) || (hit.source_urls && hit.source_urls.length)) {
       const prof = el("div", { class: "panel" }, el("h3", null, "List-entry profile"));
-      if (hit.position_or_allegation) prof.appendChild(el("div", { style: "margin-bottom:8px" }, hit.position_or_allegation));
-      if (hit.details) prof.appendChild(el("div", { style: "color:var(--text-dim);margin-bottom:8px;font-size:12.5px" }, hit.details));
+      if (hit.position_or_allegation) prof.appendChild(el("div", { class: "prof-pos" }, hit.position_or_allegation));
+      if (hit.details) prof.appendChild(el("div", { class: "prof-det" }, hit.details));
       if (hit.profile_notes) prof.appendChild(el("div", { class: "notes-block" }, hit.profile_notes));
       if (hit.relationships && hit.relationships.length) {
-        prof.appendChild(el("h3", { style: "margin-top:14px" }, "Relationships"));
+        prof.appendChild(el("h4", null, "Relationships"));
         prof.appendChild(el("ul", { class: "rel-list" }, ...hit.relationships.map((r) => el("li", null, String(r)))));
       }
       const urls = asList(hit.source_urls);
       const srcs = asList(hit.sources);
       if (urls.length || srcs.length) {
-        prof.appendChild(el("h3", { style: "margin-top:14px" }, "Sources"));
+        prof.appendChild(el("h4", null, "Sources"));
         const box = el("div", { class: "sources" });
         for (const s of srcs) box.appendChild(el("div", null, String(s)));
         for (const u of urls) box.appendChild(el("div", null, el("a", { href: u, target: "_blank", rel: "noreferrer" }, u)));
@@ -1077,15 +1172,655 @@
     }
   }
 
+  // ---------- Tools: analyst notes ----------
+  function fmtWhen(iso) {
+    try { return new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); } catch (_) { return iso; }
+  }
+  function notesPanel(hitId) {
+    const list = (state._notes || {})[hitId] || [];
+    const box = el("section", { class: "notes-panel" },
+      el("div", { class: "sec-head" }, el("h3", null, "Analyst notes"), el("div", { class: "sec-note" }, list.length ? `${list.length} on this case` : "Add what you’ve learned that the records don’t show")));
+    for (const [i, n] of list.entries()) {
+      box.appendChild(el("div", { class: "note-item" },
+        el("div", { class: "note-text" }, n.text),
+        el("div", { class: "note-meta" }, el("span", null, fmtWhen(n.at)),
+          el("button", { type: "button", class: "link-btn", onclick: () => { const all = loadNotes(); all[hitId].splice(i, 1); if (!all[hitId].length) delete all[hitId]; saveNotes(all); render(); } }, "Delete"))
+      ));
+    }
+    const ta = el("textarea", { class: "note-input", rows: "2", placeholder: "e.g. Customer sent a passport copy, DOB is 1979, not 1977", "aria-label": "New analyst note" });
+    const add = () => {
+      const v = ta.value.trim(); if (!v) { ta.focus(); return; }
+      const all = loadNotes(); (all[hitId] = all[hitId] || []).push({ text: v, at: new Date().toISOString() });
+      if (!saveNotes(all)) { ta.setCustomValidity("This browser blocked saving notes"); ta.reportValidity(); return; }
+      render();
+    };
+    ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); add(); } });
+    box.appendChild(el("div", { class: "note-add" }, ta,
+      el("div", { class: "note-actions" }, el("span", { class: "muted small" }, "⌘ Enter to save"), el("button", { type: "button", class: "btn primary sm-fixed", onclick: add }, "Add note"))));
+    return box;
+  }
+
+  function openCase(id) {
+    state.view = "queue";
+    state.selectedId = id;
+    state.selectedCustomer = null;
+    history.replaceState(null, "", "#" + id);
+    render();
+  }
+
+  function renderNotes(bundle) {
+    const all = loadNotes();
+    const ids = Object.keys(all).filter((id) => all[id].length).sort((a, b) => {
+      const la = all[a][all[a].length - 1].at, lb = all[b][all[b].length - 1].at; return lb.localeCompare(la);
+    });
+    const preds = predictions(bundle);
+    const exportBtn = el("button", { type: "button", class: "btn", onclick: () => {
+      const rows = ids.flatMap((id) => all[id].map((n) => ({ hit_id: id, alert_id: bundle.hits[id] && bundle.hits[id].alert_id, note: n.text, added_at: n.at })));
+      const blob = new Blob([rows.map((r) => JSON.stringify(r)).join("\n") + "\n"], { type: "application/jsonl" });
+      const a = el("a", { href: URL.createObjectURL(blob), download: "analyst-notes.jsonl" }); document.body.appendChild(a); a.click(); a.remove();
+    } }, "Export notes");
+    if (!ids.length) exportBtn.disabled = true;
+    const wrap = el("div", { class: "tool" },
+      el("div", { class: "tool-head" },
+        el("div", null, el("h2", { class: "tool-title" }, ids.length ? `${noteCount()} ${noteCount() === 1 ? "note" : "notes"} on ${ids.length} ${ids.length === 1 ? "case" : "cases"}` : "No notes yet"),
+          el("p", { class: "tool-sub" }, "Notes are saved in this browser only. Export them to share with the team.")),
+        exportBtn));
+    if (!ids.length) {
+      wrap.appendChild(el("div", { class: "tool-empty" }, "Open any case and use Analyst notes under the decision to record something the records don’t show."));
+    }
+    for (const id of ids) {
+      const hit = bundle.hits[id] || {}; const p = preds[id];
+      const cls = p ? DECISION_CLASS[p.decision] || "pending" : "pending";
+      const card = el("div", { class: "note-case" },
+        el("div", { class: "nc-head" },
+          el("button", { type: "button", class: "nc-title", onclick: () => openCase(id) }, hit.name || id),
+          el("span", { class: "mono muted" }, id),
+          p ? el("span", { class: "dec " + cls }, DECISION_LABEL[p.decision] || p.decision) : null),
+        ...all[id].map((n) => el("div", { class: "note-item" }, el("div", { class: "note-text" }, n.text), el("div", { class: "note-meta" }, el("span", null, fmtWhen(n.at)))))
+      );
+      wrap.appendChild(card);
+    }
+    $("stage").replaceChildren(wrap);
+  }
+
+
+  // ---------- Tools: link map ----------
+  function buildGraph(bundle, hitId) {
+    const hit = bundle.hits[hitId]; if (!hit) return null;
+    const alert = bundle.alerts[hit.alert_id] || {};
+    const cse = bundle.cases[hit.alert_id] || {};
+    const preds = predictions(bundle);
+    const hitIds = asList(alert.hit_ids).length ? asList(alert.hit_ids) : [hitId];
+    const cited = new Set(hitIds.flatMap((h) => asList(preds[h] && preds[h].evidence)));
+    const resolved = new Set(hitIds.map((h) => preds[h] && preds[h].customer_record_id).filter((x) => x && bundle.customers[x]));
+    const nodes = new Map(), edges = [];
+    const add = (id, col, kind, icon, title, sub, extra = {}) => { if (!nodes.has(id)) nodes.set(id, { id, col, kind, icon, title, sub, ...extra }); return id; };
+    const link = (a, b, label, strong) => { if (nodes.has(a) && nodes.has(b) && !edges.some((e) => e.a === a && e.b === b)) edges.push({ a, b, label, strong: !!strong }); };
+
+    const A = add("alert:" + hit.alert_id, 0, "Alert", "alert", alert.customer_name || "Screened customer", hit.alert_id, { rec: hit.alert_id, meta: [alert.dob && "born " + alert.dob, alert.country].filter(Boolean).join(", ") });
+
+    // how the alert reaches the bank's records
+    const accIds = [...new Set([alert.account_ref, ...asList(cse.account_ids)].filter(Boolean))];
+    const linkNodes = [];
+    for (const acc of accIds) linkNodes.push(add(acc, 1, "Account", "link", bundle.accounts[acc] && bundle.accounts[acc].login_handle ? bundle.accounts[acc].login_handle : "Account", acc, { rec: acc }));
+    if (alert.login_handle && !accIds.length) linkNodes.push(add("login:" + alert.login_handle, 1, "Login", "link", alert.login_handle, "login handle"));
+    if (alert.email) linkNodes.push(add("email:" + alert.email, 1, "Email", "link", alert.email, "email on file"));
+    if (!linkNodes.length) linkNodes.push(add("search:" + hit.alert_id, 1, "Name search", "scan", "No link on the alert", "matched by name, birth date, country"));
+    linkNodes.forEach((n) => link(A, n, null, true));
+
+    // customers
+    const custIds = [...new Set([...asList(cse.candidate_customer_ids), ...resolved, ...[...cited].filter((x) => String(x).startsWith("CUS-"))])].filter((c) => bundle.customers[c]);
+    const groups = asList(cse.person_groups);
+    for (const cid of custIds) {
+      const c = bundle.customers[cid];
+      add(cid, 2, "Customer", "person", c.full_name || cid, cid, { rec: cid, resolved: resolved.has(cid), meta: [c.dob && "born " + c.dob, c.nationality || c.residence_country].filter(Boolean).join(", ") });
+      let linked = false;
+      for (const ln of linkNodes) {
+        const lnode = nodes.get(ln);
+        if (lnode.kind === "Account") {
+          const accRec = bundle.accounts[lnode.rec];
+          const joint = (bundle.onboarding || []).some((o) => o.account_id === lnode.rec && o.customer_id === cid);
+          if ((accRec && accRec.customer_id === cid) || joint) { link(ln, cid, joint && accRec && accRec.customer_id !== cid ? "joint holder" : null, resolved.has(cid)); linked = true; }
+        } else if (lnode.kind === "Email" && fold(c.email) === fold(alert.email)) { link(ln, cid, null, resolved.has(cid)); linked = true; }
+        else if (lnode.kind === "Name search" || lnode.kind === "Login") { link(ln, cid, null, resolved.has(cid)); linked = true; }
+      }
+      if (!linked) link(linkNodes[0], cid, "same person", resolved.has(cid));
+    }
+    // same-person groups (records merged into one person)
+    for (const g of groups) for (let i = 1; i < g.length; i++) if (nodes.has(g[0]) && nodes.has(g[i])) link(g[0], g[i], "same person", resolved.has(g[0]) || resolved.has(g[i]));
+
+    // evidence: KYC, notes, web results
+    const kycIds = [...new Set([...asList(cse.kyc_ids), ...[...cited].filter((x) => String(x).startsWith("KYC-"))])].filter((k) => bundle.kyc_checks[k]);
+    for (const k of kycIds) {
+      const r = bundle.kyc_checks[k];
+      add(k, 3, "KYC check", "idcard", r.verified_name || "Identity check", k, { rec: k, cited: cited.has(k), meta: [r.result, r.document_country].filter(Boolean).join(", ") });
+      const owners = (bundle.onboarding || []).filter((o) => o.kyc_applicant_id === r.applicant_id).map((o) => o.customer_id);
+      const own = owners.find((o) => nodes.has(o));
+      if (own) link(own, k, null, cited.has(k));
+    }
+    const noteIds = [...new Set([...asList(cse.note_ids), ...[...cited].filter((x) => String(x).startsWith("NOTE-"))])].filter((n) => bundle.notes[n]);
+    for (const n of noteIds) {
+      const r = bundle.notes[n];
+      add(n, 3, "Note", "note", (r.text || "").slice(0, 48) + ((r.text || "").length > 48 ? "…" : ""), n, { rec: n, cited: cited.has(n), meta: [r.channel, r.created_at].filter(Boolean).join(", ") });
+      const own = custIds.find((cid) => fold(bundle.customers[cid].email) === fold(r.requester_email));
+      if (own) link(own, n, null, cited.has(n));
+    }
+    // watchlist hits + decisions
+    for (const h of hitIds) {
+      const H = bundle.hits[h]; if (!H) continue;
+      add("hit:" + h, 4, "Watchlist hit", "list", H.name || h, h, { rec: h, focus: h === hitId, meta: categoryOf(H) });
+      const p = preds[h];
+      const dec = p && p.decision ? p.decision : "PENDING";
+      add("dec:" + h, 5, "Decision", "map", DECISION_LABEL[dec] || "Pending", p && p.reason_code ? p.reason_code : "no decision", { decision: dec, focus: h === hitId, hit: h });
+      link("hit:" + h, "dec:" + h, null, true);
+      if (p && p.customer_record_id && nodes.has(p.customer_record_id)) link(p.customer_record_id, "dec:" + h, "resolved", true);
+    }
+    const srIds = [...new Set([...asList(cse.search_ids), ...[...cited].filter((x) => String(x).startsWith("SR-"))])].filter((s) => bundle.search_results[s]);
+    for (const s of srIds) {
+      const r = bundle.search_results[s];
+      add(s, 3, "Web result", "globe", r.title || s, s, { rec: s, cited: cited.has(s), meta: r.source });
+      link(s, "hit:" + hitId, cited.has(s) ? "about this hit" : null, cited.has(s));
+    }
+    // hits with no other way in hang off the alert
+    for (const h of hitIds) if (nodes.has("hit:" + h) && !edges.some((e) => e.b === "hit:" + h)) link(A, "hit:" + h, "screened against", false);
+    // cited evidence feeds the decision
+    for (const id of cited) if (nodes.has(id) && nodes.get(id).col === 3) {
+      const owner = hitIds.find((h) => asList(preds[h] && preds[h].evidence).includes(id));
+      link(id, "dec:" + owner, "cited", true);
+    }
+    // cap busy columns
+    const CAP = 9;
+    const byCol = {};
+    for (const n of nodes.values()) (byCol[n.col] = byCol[n.col] || []).push(n);
+    for (const [col, list] of Object.entries(byCol)) {
+      list.sort((a, b) => (b.cited || b.resolved || b.focus ? 1 : 0) - (a.cited || a.resolved || a.focus ? 1 : 0));
+      if (list.length > CAP) {
+        const drop = list.slice(CAP - 1);
+        for (const d of drop) nodes.delete(d.id);
+        const more = "more:" + col;
+        nodes.set(more, { id: more, col: +col, kind: "More", icon: "all", title: `${drop.length} more`, sub: "not shown to keep the map readable" });
+      }
+    }
+    const kept = edges.filter((e) => nodes.has(e.a) && nodes.has(e.b));
+    return { nodes: [...nodes.values()], edges: kept, hit, alert };
+  }
+
+
+  // ---------- link map search ----------
+  function mapSearch(bundle, q) {
+    const f = fold(q).trim();
+    if (f.length < 2) return [];
+    const preds = predictions(bundle);
+    const out = [];
+    for (const hit of Object.values(bundle.hits)) {
+      const alert = bundle.alerts[hit.alert_id] || {};
+      const p = preds[hit.hit_id];
+      const cust = p && p.customer_record_id && bundle.customers[p.customer_record_id];
+      const fields = [hit.name, ...asList(hit.aliases), alert.customer_name, cust && cust.full_name];
+      const ids = [hit.hit_id, hit.alert_id, p && p.customer_record_id, ...asList(p && p.evidence), ...asList((bundle.cases[hit.alert_id] || {}).candidate_customer_ids)];
+      const idHit = ids.some((x) => x && fold(x) === f);
+      const nameHit = fields.some((x) => x && fold(x).includes(f));
+      if (!idHit && !nameHit) continue;
+      out.push({ hit, alert, pred: p, score: idHit ? 0 : fields.findIndex((x) => x && fold(x).startsWith(f)) === -1 ? 2 : 1 });
+    }
+    const rank = { SAME_ENTITY: 0, REVIEW: 1, DIFFERENT_ENTITY: 2 };
+    out.sort((a, b) => a.score - b.score || (rank[a.pred && a.pred.decision] ?? 3) - (rank[b.pred && b.pred.decision] ?? 3));
+    return out;
+  }
+
+  function buildSearchGraph(bundle, q, results) {
+    const MAX = 14;
+    const shown = results.slice(0, MAX);
+    const nodes = new Map(), edges = [];
+    const add = (id, col, kind, icon, title, sub, extra = {}) => { if (!nodes.has(id)) nodes.set(id, { id, col, kind, icon, title, sub, ...extra }); return id; };
+    const link = (a, b, label, strong) => { if (nodes.has(a) && nodes.has(b) && !edges.some((e) => e.a === a && e.b === b)) edges.push({ a, b, label, strong: !!strong }); };
+    const Q = add("query", 0, "Search", "scan", `“${q}”`, `${results.length} matching ${results.length === 1 ? "hit" : "hits"}`, { meta: results.length > MAX ? `Showing the first ${MAX}` : "" });
+    for (const r of shown) {
+      const { hit, alert, pred } = r;
+      const A = add("alert:" + hit.alert_id, 1, "Alert", "alert", alert.customer_name || "Screened customer", hit.alert_id, { rec: hit.alert_id });
+      link(Q, A, null, false);
+      const cse = bundle.cases[hit.alert_id] || {};
+      const resolvedId = pred && pred.customer_record_id && bundle.customers[pred.customer_record_id] ? pred.customer_record_id : null;
+      const cands = [...new Set([resolvedId, ...asList(cse.candidate_customer_ids)].filter((c) => c && bundle.customers[c]))].slice(0, resolvedId ? 1 : 2);
+      for (const cid of cands) {
+        const c = bundle.customers[cid];
+        add(cid, 2, "Customer", "person", c.full_name || cid, cid, { rec: cid, resolved: cid === resolvedId, meta: [c.dob && "born " + c.dob, c.nationality || c.residence_country].filter(Boolean).join(", ") });
+        link(A, cid, null, cid === resolvedId);
+      }
+      const H = add("hit:" + hit.hit_id, 3, "Watchlist hit", "list", hit.name || hit.hit_id, hit.hit_id, { rec: hit.hit_id, meta: categoryOf(hit) });
+      const dec = pred && pred.decision ? pred.decision : "PENDING";
+      const D = add("dec:" + hit.hit_id, 4, "Decision", "map", DECISION_LABEL[dec] || "Pending", pred && pred.reason_code ? pred.reason_code : "no decision", { decision: dec, hit: hit.hit_id });
+      link(H, D, null, true);
+      if (resolvedId) link(resolvedId, D, "resolved", true);
+      link(A, H, resolvedId ? null : "screened against", false);
+    }
+    // the same customer behind several alerts is the interesting part
+    for (const n of nodes.values()) if (n.kind === "Customer") {
+      const inbound = edges.filter((e) => e.b === n.id && e.a.startsWith("alert:")).length;
+      if (inbound > 1) { n.shared = true; n.meta = `On ${inbound} alerts` + (n.meta ? ", " + n.meta : ""); }
+    }
+    if (results.length > MAX) nodes.set("more:search", { id: "more:search", col: 1, kind: "More", icon: "all", title: `${results.length - MAX} more`, sub: "narrow the search to see them" });
+    return { nodes: [...nodes.values()], edges, search: true, q, total: results.length, totalAlerts: new Set(results.map((r) => r.hit.alert_id)).size, shownHits: shown.length };
+  }
+
+  function mapSearchBox(bundle) {
+    const wrap = el("div", { class: "map-search" });
+    const input = el("input", { type: "search", value: state.mapQuery || "", placeholder: "Search a person, hit, alert or customer ID", "aria-label": "Search for a person or case to map", autocomplete: "off", role: "combobox", "aria-expanded": "false", "aria-controls": "map-results" });
+    const list = el("div", { class: "map-results", id: "map-results", role: "listbox", hidden: "" });
+    wrap.append(el("span", { class: "ms-icon" }, svg("scan")), input, list);
+    let items = [], active = -1, timer = null;
+    const close = () => { list.hidden = true; input.setAttribute("aria-expanded", "false"); active = -1; };
+    const pick = (i) => {
+      const it = items[i]; if (!it || it.none) return;
+      if (it.all) { state.mapQuery = input.value.trim(); state.mapMode = "search"; }
+      else { state.mapMode = "case"; state.mapHit = it.hitId; state.mapQuery = input.value.trim(); }
+      state.mapPos = null; close(); renderMap(bundle);
+    };
+    const paint = () => {
+      list.replaceChildren(...items.map((it, i) => {
+        const o = el("div", { class: "mr-item" + (i === active ? " active" : "") + (it.all ? " all" : "") + (it.none ? " none" : ""), role: "option", "aria-selected": i === active ? "true" : "false" }, ...it.content);
+        o.addEventListener("mousedown", (e) => { e.preventDefault(); pick(i); });
+        return o;
+      }));
+    };
+    const update = () => {
+      const q = input.value.trim();
+      if (q.length < 2) { close(); return; }
+      const res = mapSearch(bundle, q);
+      items = [];
+      if (res.length > 1) items.push({ all: true, content: [svg("map"), el("span", { class: "mr-main" }, `Map all ${res.length} results together`), el("span", { class: "mr-sub" }, "Shared people linked")] });
+      for (const r of res.slice(0, 8)) {
+        const dec = r.pred && r.pred.decision ? r.pred.decision : "PENDING";
+        items.push({ hitId: r.hit.hit_id, content: [
+          el("span", { class: "mr-dot " + (DECISION_CLASS[dec] || "pending") }),
+          el("span", { class: "mr-main" }, r.hit.name || r.hit.hit_id, el("span", { class: "mr-cust" }, " · customer " + (r.alert.customer_name || "unknown"))),
+          el("span", { class: "mr-sub mono" }, r.hit.hit_id) ] });
+      }
+      if (!res.length) items.push({ none: true, content: [el("span", { class: "mr-sub" }, `Nothing matches “${q}”`)] });
+      if (res.length > 8) items.push({ none: true, content: [el("span", { class: "mr-sub" }, `${res.length - 8} more. Use “Map all” or keep typing`)] });
+      active = items.findIndex((x) => !x.none);
+      list.hidden = false; input.setAttribute("aria-expanded", "true"); paint();
+    };
+    input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(update, 120); });
+    input.addEventListener("focus", () => { if (input.value.trim().length >= 2) update(); });
+    input.addEventListener("blur", () => setTimeout(close, 100));
+    input.addEventListener("keydown", (e) => {
+      if (list.hidden && e.key === "Enter") { e.preventDefault(); update(); return; }
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault(); if (!items.some((x) => !x.none)) return;
+        let i = active;
+        do { i = (i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length; } while (items[i].none);
+        active = i; paint();
+      } else if (e.key === "Enter") { e.preventDefault(); if (active >= 0) pick(active); }
+      else if (e.key === "Escape") { close(); }
+    });
+    return wrap;
+  }
+
+  const NODE_W = 196, NODE_H = 64, LEVEL_GAP = 64, SIB_GAP = 20;
+  function layoutGraph(g) {
+    // top-down tree: one level per record type, children centred under their parents
+    const levels = {};
+    for (const n of g.nodes) (levels[n.col] = levels[n.col] || []).push(n);
+    const order = Object.keys(levels).map(Number).sort((a, b) => a - b);
+    const parentsOf = (id) => g.edges.filter((e) => e.b === id).map((e) => e.a);
+    const widest = Math.max(...order.map((l) => levels[l].length));
+    const fullW = widest * (NODE_W + SIB_GAP);
+    const pos = {};
+    order.forEach((lvl, li) => {
+      const list = levels[lvl];
+      // keep children near their parents: sort by mean parent x
+      list.sort((a, b) => {
+        const mx = (n) => { const ps = parentsOf(n.id).filter((p) => pos[p]); return ps.length ? ps.reduce((s, p) => s + pos[p].x, 0) / ps.length : fullW / 2; };
+        return mx(a) - mx(b);
+      });
+      const w = list.length * (NODE_W + SIB_GAP) - SIB_GAP;
+      list.forEach((n, i) => { pos[n.id] = { x: 48 + (fullW - w) / 2 + i * (NODE_W + SIB_GAP), y: 40 + li * (NODE_H + LEVEL_GAP) }; });
+    });
+    return pos;
+  }
+
+  function renderMap(bundle) {
+    if (!state.mapHit || !bundle.hits[state.mapHit]) state.mapHit = state.selectedId || Object.keys(bundle.hits)[0];
+    const searching = state.mapMode === "search" && state.mapQuery;
+    const sres = searching ? mapSearch(bundle, state.mapQuery) : null;
+    const g = searching && sres.length ? buildSearchGraph(bundle, state.mapQuery, sres) : buildGraph(bundle, state.mapHit);
+    const mapKey = searching && sres.length ? "q:" + state.mapQuery : state.mapHit;
+    const stage = $("stage");
+    if (!g) { stage.replaceChildren(el("div", { class: "tool" }, el("div", { class: "tool-empty" }, "Pick a hit in the queue first."))); return; }
+    if (!state.mapPos || state.mapPos._hit !== mapKey) { state.mapPos = layoutGraph(g); state.mapPos._hit = mapKey; state.mapView = null; }
+    const pos = state.mapPos;
+    const view = state.mapView || (state.mapView = { x: 0, y: 0, k: 1 });
+    const preds = predictions(bundle);
+    const p = preds[state.mapHit];
+    const dec = p && p.decision ? p.decision : "PENDING";
+
+    const layer = el("div", { class: "map-layer" });
+    const svgNS = "http://www.w3.org/2000/svg";
+    const edgeSvg = document.createElementNS(svgNS, "svg");
+    edgeSvg.setAttribute("class", "map-edges");
+    const defs = document.createElementNS(svgNS, "defs");
+    defs.innerHTML = '<marker id="mArrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 7 4 1 7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></marker>';
+    edgeSvg.appendChild(defs);
+    layer.appendChild(edgeSvg);
+    const edgeEls = g.edges.map((e) => {
+      const path = document.createElementNS(svgNS, "path");
+      path.setAttribute("class", "map-edge" + (e.strong ? " strong" : ""));
+      path.setAttribute("marker-end", "url(#mArrow)");
+      edgeSvg.appendChild(path);
+      let lab = null;
+      if (e.label) { lab = el("span", { class: "edge-label" + (e.strong ? " strong" : "") }, e.label); layer.appendChild(lab); }
+      return { e, path, lab };
+    });
+    const nodeEls = {};
+    for (const n of g.nodes) {
+      const cls = ["map-node", "k-" + n.kind.toLowerCase().replace(/\s+/g, "-")];
+      if (n.cited) cls.push("cited"); if (n.resolved) cls.push("resolved"); if (n.focus) cls.push("focus"); if (n.shared) cls.push("shared");
+      if (n.decision) cls.push("dec-" + (DECISION_CLASS[n.decision] || "pending"));
+      const node = el("div", { class: cls.join(" "), tabindex: "0", role: "button", "aria-label": `${n.kind}: ${n.title}` },
+        el("span", { class: "mn-icon" }, svg(n.icon)),
+        el("div", { class: "mn-body" },
+          el("div", { class: "mn-kind" }, n.kind, n.cited ? el("span", { class: "mn-tag" }, "Cited") : null, n.resolved ? el("span", { class: "mn-tag" }, "Resolved") : null, n.shared ? el("span", { class: "mn-tag" }, "Shared") : null),
+          el("div", { class: "mn-title" }, n.title),
+          el("div", { class: "mn-sub mono" }, n.sub))
+      );
+      node.style.transform = `translate(${pos[n.id].x}px, ${pos[n.id].y}px)`;
+      nodeEls[n.id] = node; layer.appendChild(node);
+    }
+    function drawEdges() {
+      let maxX = 0, maxY = 0;
+      for (const id in nodeEls) { maxX = Math.max(maxX, pos[id].x + NODE_W); maxY = Math.max(maxY, pos[id].y + NODE_H); }
+      edgeSvg.setAttribute("width", maxX + 200); edgeSvg.setAttribute("height", maxY + 200);
+      for (const { e, path, lab } of edgeEls) {
+        const a = pos[e.a], b = pos[e.b];
+        let x1, y1, x2, y2, d, lx, ly;
+        if (Math.abs(a.y - b.y) < 8) { // same level: arc underneath
+          const left = a.x < b.x ? a : b, right = a.x < b.x ? b : a;
+          x1 = a.x + NODE_W / 2; y1 = a.y + NODE_H; x2 = b.x + NODE_W / 2; y2 = b.y + NODE_H + 4;
+          const dip = 28 + Math.min(40, Math.abs(x2 - x1) * 0.08);
+          d = `M${x1},${y1} C${x1},${y1 + dip} ${x2},${y2 + dip} ${x2},${y2}`;
+          lx = (left.x + right.x + NODE_W) / 2; ly = y1 + dip * 0.75;
+        } else {
+          const down = b.y > a.y;
+          x1 = a.x + NODE_W / 2; y1 = down ? a.y + NODE_H : a.y; x2 = b.x + NODE_W / 2; y2 = down ? b.y - 4 : b.y + NODE_H + 4;
+          const dy = Math.max(28, Math.abs(y2 - y1) * 0.5) * (down ? 1 : -1);
+          d = `M${x1},${y1} C${x1},${y1 + dy} ${x2},${y2 - dy} ${x2},${y2}`;
+          lx = (x1 + x2) / 2; ly = (y1 + y2) / 2;
+        }
+        path.setAttribute("d", d);
+        if (lab) lab.style.transform = `translate(${lx - lab.offsetWidth / 2}px, ${ly - 9}px)`;
+      }
+    }
+    const canvas = el("div", { class: "map-canvas", tabindex: "-1" }, layer);
+    const applyView = () => { layer.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`; canvas.style.backgroundPosition = `${view.x}px ${view.y}px`; canvas.style.backgroundSize = `${20 * view.k}px ${20 * view.k}px`; zoomLabel.textContent = Math.round(view.k * 100) + "%"; };
+
+    // details panel
+    const panel = el("aside", { class: "map-panel" });
+    function showDetail(n) {
+      for (const id in nodeEls) nodeEls[id].classList.toggle("selected", id === n.id);
+      const kids = [el("div", { class: "mp-kind" }, n.kind), el("div", { class: "mp-title" }, n.title)];
+      if (n.meta) kids.push(el("div", { class: "mp-meta" }, n.meta));
+      if (n.decision) {
+        const pr = preds[n.hit];
+        kids.push(el("span", { class: "dec " + (DECISION_CLASS[n.decision] || "pending") }, DECISION_LABEL[n.decision] || "Pending"));
+        if (pr && pr.reason) kids.push(el("p", { class: "mp-reason" }, pr.reason));
+        kids.push(el("button", { type: "button", class: "btn sm-fixed", onclick: () => openCase(n.hit) }, "Open case"));
+      } else if (n.rec && findRecord(n.rec, bundle)) {
+        kids.push(evidenceCard(n.rec, bundle, !!n.cited));
+        if (n.kind === "Watchlist hit") kids.push(el("button", { type: "button", class: "btn sm-fixed", onclick: () => openCase(n.rec) }, "Open case"));
+      } else if (n.sub) kids.push(el("div", { class: "mp-meta" }, n.sub));
+      const linkedTo = g.edges.filter((e) => e.a === n.id || e.b === n.id).map((e) => g.nodes.find((x) => x.id === (e.a === n.id ? e.b : e.a))).filter(Boolean);
+      if (linkedTo.length) kids.push(el("div", { class: "mp-links" }, el("div", { class: "mp-kind" }, `Linked to ${linkedTo.length}`),
+        ...linkedTo.map((x) => el("button", { type: "button", class: "mp-link", onclick: () => showDetail(x) }, el("span", null, x.kind), el("span", { class: "mono" }, x.sub)))));
+      panel.replaceChildren(...kids);
+      for (const { e, path } of edgeEls) path.classList.toggle("hot", e.a === n.id || e.b === n.id);
+    }
+
+    // drag nodes, pan canvas
+    let drag = null;
+    canvas.addEventListener("pointerdown", (ev) => {
+      if (ev.button !== 0) return;
+      const nodeEl = ev.target.closest(".map-node");
+      const id = nodeEl ? Object.keys(nodeEls).find((k) => nodeEls[k] === nodeEl) : null;
+      drag = { id, sx: ev.clientX, sy: ev.clientY, ox: id ? pos[id].x : view.x, oy: id ? pos[id].y : view.y, moved: false };
+      canvas.setPointerCapture(ev.pointerId);
+      canvas.classList.add(id ? "dragging-node" : "panning");
+      if (nodeEl) nodeEl.classList.add("lift");
+    });
+    canvas.addEventListener("pointermove", (ev) => {
+      if (!drag) return;
+      const dx = ev.clientX - drag.sx, dy = ev.clientY - drag.sy;
+      if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+      if (drag.id) {
+        pos[drag.id].x = drag.ox + dx / view.k; pos[drag.id].y = drag.oy + dy / view.k;
+        nodeEls[drag.id].style.transform = `translate(${pos[drag.id].x}px, ${pos[drag.id].y}px)`;
+        drawEdges();
+      } else { view.x = drag.ox + dx; view.y = drag.oy + dy; applyView(); }
+    });
+    const end = () => {
+      if (!drag) return;
+      if (drag.id) { nodeEls[drag.id].classList.remove("lift"); if (!drag.moved) showDetail(g.nodes.find((n) => n.id === drag.id)); }
+      canvas.classList.remove("dragging-node", "panning");
+      drag = null;
+    };
+    canvas.addEventListener("pointerup", end);
+    canvas.addEventListener("pointercancel", end);
+    canvas.addEventListener("keydown", (ev) => {
+      const nodeEl = ev.target.closest && ev.target.closest(".map-node");
+      if (nodeEl && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); showDetail(g.nodes.find((n) => nodeEls[n.id] === nodeEl)); }
+    });
+    const zoomTo = (k, cx, cy) => {
+      const r = canvas.getBoundingClientRect();
+      cx = cx == null ? r.width / 2 : cx; cy = cy == null ? r.height / 2 : cy;
+      const nk = Math.min(1.8, Math.max(0.35, k));
+      view.x = cx - ((cx - view.x) * nk) / view.k; view.y = cy - ((cy - view.y) * nk) / view.k; view.k = nk; applyView();
+    };
+    canvas.addEventListener("wheel", (ev) => {
+      ev.preventDefault();
+      if (ev.ctrlKey || ev.metaKey) { const r = canvas.getBoundingClientRect(); zoomTo(view.k * (ev.deltaY < 0 ? 1.1 : 0.9), ev.clientX - r.left, ev.clientY - r.top); }
+      else { view.x -= ev.deltaX; view.y -= ev.deltaY; applyView(); }
+    }, { passive: false });
+    const fit = () => {
+      const r = canvas.getBoundingClientRect();
+      let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
+      for (const id in nodeEls) { minX = Math.min(minX, pos[id].x); minY = Math.min(minY, pos[id].y); maxX = Math.max(maxX, pos[id].x + NODE_W); maxY = Math.max(maxY, pos[id].y + NODE_H); }
+      const k = Math.min(1, Math.max(0.7, Math.min((r.width - 48) / (maxX - minX + 48), (r.height - 130) / (maxY - minY + 40))));
+      const w = (maxX - minX) * k, h = (maxY - minY) * k;
+      view.k = k;
+      // wide trees open centred on the top of the tree; pan to see the sides
+      view.x = r.width / 2 - ((minX + maxX) / 2) * k;
+      view.y = h + 130 <= r.height ? 44 + (r.height - 130 - h) / 2 - minY * k : 44 - minY * k;
+      applyView();
+    };
+    const zoomLabel = el("span", { class: "zoom-label mono" }, "100%");
+    const hitsInAlert = g.search ? [] : asList(g.alert.hit_ids);
+    const toolbar = el("div", { class: "map-toolbar" },
+      el("button", { type: "button", class: "tb-btn", title: "Zoom out", "aria-label": "Zoom out", onclick: () => zoomTo(view.k / 1.2) }, "−"),
+      zoomLabel,
+      el("button", { type: "button", class: "tb-btn", title: "Zoom in", "aria-label": "Zoom in", onclick: () => zoomTo(view.k * 1.2) }, "+"),
+      el("span", { class: "tb-sep" }),
+      el("button", { type: "button", class: "tb-btn wide", onclick: fit }, "Fit"),
+      el("button", { type: "button", class: "tb-btn wide", onclick: () => { state.mapPos = null; renderMap(bundle); } }, "Reset layout")
+    );
+    const legend = el("div", { class: "map-legend" },
+      el("span", null, el("i", { class: "lg-line strong" }), g.search ? "Resolved customer and decision" : "Path the decision used"),
+      el("span", null, el("i", { class: "lg-line" }), "Other link"),
+      el("span", null, "Drag nodes to rearrange, drag the background to pan, ⌘ scroll to zoom"));
+
+    const head = g.search
+      ? el("div", { class: "map-head" },
+          el("div", null,
+            el("div", { class: "case-meta" }, el("span", { class: "meta" }, el("span", { class: "meta-k" }, "Combined map"), el("span", null, `${g.total} ${g.total === 1 ? "hit" : "hits"} across ${g.totalAlerts} ${g.totalAlerts === 1 ? "alert" : "alerts"}` + (g.shownHits < g.total ? `, first ${g.shownHits} mapped` : "")))),
+            el("h2", { class: "map-title" }, `Results for “${g.q}”`)),
+          el("div", { class: "map-actions" }, mapSearchBox(bundle),
+            el("button", { type: "button", class: "btn", onclick: () => { state.mapMode = "case"; state.mapQuery = ""; state.mapPos = null; renderMap(bundle); } }, "Back to case")))
+      : el("div", { class: "map-head" },
+          el("div", null,
+            el("div", { class: "case-meta" },
+              el("span", { class: "meta" }, el("span", { class: "meta-k" }, "Alert"), el("span", { class: "mono" }, g.hit.alert_id)),
+              el("span", { class: "meta" }, el("span", { class: "meta-k" }, "Screened customer"), el("span", null, g.alert.customer_name || "unknown")),
+              hitsInAlert.length > 1 ? el("span", { class: "meta" }, el("span", { class: "meta-k" }, "Hits on this alert"), el("span", { class: "mono" }, String(hitsInAlert.length))) : null),
+            el("h2", { class: "map-title" }, g.hit.name || state.mapHit, el("span", { class: "dec " + (DECISION_CLASS[dec] || "pending") }, DECISION_LABEL[dec] || "Pending"))),
+          el("div", { class: "map-actions" }, mapSearchBox(bundle),
+            el("button", { type: "button", class: "btn", onclick: () => openCase(state.mapHit) }, "Open case")));
+    if (searching && !sres.length) head.appendChild(el("div", { class: "map-note" }, `Nothing matches “${state.mapQuery}”, so this is still the current case`));
+    const wrap = el("div", { class: "map-wrap" }, head, el("div", { class: "map-body" }, el("div", { class: "map-stage" }, canvas, toolbar, legend), panel));
+    stage.replaceChildren(wrap);
+    drawEdges();
+    requestAnimationFrame(() => { drawEdges(); if (!state.mapViewSet) fit(); state.mapViewSet = false; applyView(); });
+    showDetail(g.search ? (g.nodes.find((n) => n.shared) || g.nodes[0]) : (g.nodes.find((n) => n.focus && n.decision) || g.nodes[0]));
+  }
+
+  // ---------- Tools: screen a person ----------
+  const LISTING_PHRASE = { sanctions: "a sanctioned individual", pep: "a politically exposed person", enforcement: "the subject of enforcement action", "adverse media": "named in adverse media", soe: "a state-owned enterprise official" };
+  function hitBirthYears(bundle, hit, lookup, notCountries) {
+    const listed = asList(hit.dobs);
+    if (listed.length) return { dobs: listed, src: "listed" };
+    const fromNotes = extractNoteDobs(hit.profile_notes).map((p) => String(p.y));
+    if (fromNotes.length) return { dobs: fromNotes, src: "profile notes" };
+    // web results about this hit: same kind of listing, in a country tied to the hit
+    const cse = (bundle.cases || {})[hit.alert_id];
+    if (!cse || !cse.search_ids) return { dobs: [], src: null };
+    const phrase = LISTING_PHRASE[fold(categoryOf(hit))] || "named on a watchlist";
+    const hc = hitCountries(hit, lookup, notCountries);
+    const years = new Set();
+    for (const id of cse.search_ids) {
+      const r = bundle.search_results[id]; if (!r || !r.snippet) continue;
+      if (!fold(r.snippet).includes(phrase)) continue;
+      const sc = countriesFromText(r.snippet, lookup, notCountries);
+      if (![...sc].some((c) => hc.has(c))) continue;
+      const age = /(\d{1,3})-year-old|age of (\d{1,3})|aged? (\d{1,3})|, (\d{1,3})[,.]|\((\d{1,3})\)|\bat (\d{1,3})\b|then (\d{1,3})|being (\d{1,3})/.exec(r.snippet);
+      const yr = /\b(19\d{2}|20\d{2})\b/.exec(r.snippet);
+      if (!age || !yr) continue;
+      const a = +age.slice(1).find(Boolean), y = +yr[1];
+      if (a > 0 && a < 120) { years.add(String(y - a - 1)); years.add(String(y - a)); }
+    }
+    return { dobs: [...years], src: years.size ? "web results" : null };
+  }
+
+  function screenOne(bundle, q) {
+    const variants = variantMap(bundle);
+    const { lookup, notCountries } = lookupMaps(bundle);
+    const qType = entityNorm(q.type);
+    const qC = countrySet([q.country], lookup, notCountries);
+    const out = [];
+    for (const hit of Object.values(bundle.hits)) {
+      const nm = q.name ? namesAgree([q.name], [hit.name, ...asList(hit.aliases)].filter(Boolean), variants) : { status: "unknown", matched: 0 };
+      if (q.name && !nm.matched) continue;
+      const hType = entityNorm(hit.entity_type);
+      const typeSt = !qType || !hType ? "unknown" : qType === hType ? "agree" : "conflict";
+      const hb = hitBirthYears(bundle, hit, lookup, notCountries);
+      const hDobs = hb.dobs;
+      const dobSt = q.dob ? dobStatus([q.dob], hDobs) : "unknown";
+      const locSt = setStatus(qC, hitCountries(hit, lookup, notCountries));
+      const nameSt = nm.status;
+      if (!q.name) {
+        // limited data: keep entries the given fields support and nothing contradicts
+        const given = [q.dob ? dobSt : null, q.country ? locSt : null, q.type && !q.typeDefault ? typeSt : null].filter(Boolean);
+        if (!given.includes("agree") || given.includes("conflict")) continue;
+      }
+      let verdict = "REVIEW", why = "Not enough agreement to confirm and nothing contradicts it";
+      if (typeSt === "conflict") { verdict = "DIFFERENT_ENTITY"; why = "One is a person and the other a company"; }
+      else if (dobSt === "conflict") { verdict = "DIFFERENT_ENTITY"; why = "Every birth date on the hit contradicts the one entered"; }
+      else if (nameSt === "agree" && dobSt === "agree") { verdict = locSt === "conflict" ? "REVIEW" : "SAME_ENTITY"; why = locSt === "conflict" ? "Name and birth date agree but the countries differ" : "Name and birth date agree and nothing contradicts them"; }
+      else if (locSt === "conflict") { verdict = "DIFFERENT_ENTITY"; why = "Every country differs"; }
+      else if (qType === "Company" && nameSt === "agree" && locSt === "agree") { verdict = "SAME_ENTITY"; why = "Company name and country agree"; }
+      else if (!q.name) { verdict = "REVIEW"; why = "Matches what you entered, but no name to compare"; }
+      else if (nameSt !== "agree") { verdict = "REVIEW"; why = "Only part of the name matches"; }
+      const score = (nameSt === "agree" ? 4 : nm.matched) + (dobSt === "agree" ? 3 : dobSt === "conflict" ? -3 : 0) + (locSt === "agree" ? 2 : locSt === "conflict" ? -2 : 0) + (typeSt === "conflict" ? -4 : 0);
+      out.push({ hit, nameSt, dobSt, locSt, typeSt, verdict, why, score, hDobs, dobSrc: hb.src });
+    }
+    const rank = { SAME_ENTITY: 0, REVIEW: 1, DIFFERENT_ENTITY: 2 };
+    out.sort((a, b) => rank[a.verdict] - rank[b.verdict] || b.score - a.score);
+    return out;
+  }
+
+  function renderScreen(bundle) {
+    const q = state.screen || { name: "", dob: "", country: "", type: "", typeDefault: true };
+    const field = (label, name, ph, extra = {}) => el("label", null, label, el("input", { name, value: q[name] || "", placeholder: ph, autocomplete: "off", ...extra }));
+    const form = el("form", { class: "screen-form" },
+      field("Name", "name", "Full name, or just part of it"),
+      field("Date of birth", "dob", "YYYY-MM-DD or year"),
+      field("Country", "country", "e.g. France"),
+      el("label", null, "Type", el("select", { name: "type" },
+        ...[["", "Any"], ["Individual", "Individual"], ["Company", "Company"]].map(([v, l]) => el("option", v === (q.type || "") ? { value: v, selected: "" } : { value: v }, l)))),
+      el("button", { type: "submit", class: "btn primary" }, "Scan watchlist")
+    );
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const typeVal = String(fd.get("type") || "");
+      state.screen = { name: String(fd.get("name") || "").trim(), dob: String(fd.get("dob") || "").trim(), country: String(fd.get("country") || "").trim(), type: typeVal || "", typeDefault: !typeVal };
+      if (!state.screen.name && !state.screen.dob && !state.screen.country) {
+        const inp = form.querySelector("input[name=name]");
+        inp.setCustomValidity("Enter at least a name, a date of birth or a country");
+        inp.reportValidity(); inp.addEventListener("input", () => inp.setCustomValidity(""), { once: true });
+        return;
+      }
+      renderScreen(bundle);
+      const r = $("stage").querySelector(".screen-results"); if (r) r.scrollIntoView({ block: "start" });
+    });
+    const wrap = el("div", { class: "tool" },
+      el("div", { class: "tool-head" }, el("div", null,
+        el("h2", { class: "tool-title" }, "Check a name against all " + nf.format(Object.keys(bundle.hits).length) + " watchlist entries"),
+        el("p", { class: "tool-sub" }, "Fill in as much or as little as you have. Any one field is enough, and every match is listed. Results use the case view’s matching rules and are indicative, not the decision system’s verdict."))),
+      form);
+    const ran = q.name || q.dob || q.country;
+    const what = [q.name && `“${q.name}”`, q.dob && `born ${q.dob}`, q.country && `linked to ${q.country}`].filter(Boolean).join(", ");
+    if (ran) {
+      const res = screenOne(bundle, q);
+      const counts = { SAME_ENTITY: 0, REVIEW: 0, DIFFERENT_ENTITY: 0 };
+      res.forEach((r) => counts[r.verdict]++);
+      const word = { agree: "Agrees", conflict: "Conflict", unknown: "—" };
+      const cell = (st) => el("span", { class: "status-pill " + st }, word[st]);
+      const box = el("section", { class: "screen-results" },
+        el("div", { class: "sec-head" },
+          el("h3", null, res.length ? `${nf.format(res.length)} watchlist ${res.length === 1 ? "entry matches" : "entries match"} ${what}` : `No watchlist entry matches ${what}`),
+          res.length ? el("div", { class: "sec-note" }, `${counts.SAME_ENTITY} likely same, ${counts.REVIEW} to review, ${counts.DIFFERENT_ENTITY} ruled out`) : null));
+      if (res.length) {
+        const shown = res;
+        box.appendChild(el("table", { class: "screen-table" },
+          el("thead", null, el("tr", null, ...["Watchlist entry", "List", "Name", "Born", "Country", "Indicative result"].map((h) => el("th", null, h)))),
+          el("tbody", null, ...shown.map((r) => el("tr", { class: "row", onclick: () => openCase(r.hit.hit_id), title: "Open this hit’s case" },
+            el("td", null, el("div", { class: "st-name" }, r.hit.name), el("div", { class: "mono muted" }, r.hit.hit_id)),
+            el("td", { class: "muted" }, categoryOf(r.hit)),
+            el("td", null, cell(r.nameSt)),
+            el("td", null, cell(r.dobSt), r.hDobs.length ? el("div", { class: "muted small" }, r.hDobs.slice(0, 3).join(" or ") + (r.dobSrc && r.dobSrc !== "listed" ? `, from ${r.dobSrc}` : "")) : null),
+            el("td", null, cell(r.locSt)),
+            el("td", null, el("span", { class: "dec " + DECISION_CLASS[r.verdict] }, DECISION_LABEL[r.verdict]), el("div", { class: "muted small" }, r.why))
+          )))));
+        if (res.length > 25) box.appendChild(el("p", { class: "muted small" }, "Add a birth date or country to narrow these down."));
+      }
+      wrap.appendChild(box);
+    }
+    $("stage").replaceChildren(wrap);
+    if (!ran) form.querySelector("input").focus();
+  }
+
   function render() {
     const bundle = state.bundle;
     if (!bundle) return;
+    state._notes = loadNotes();
     renderStats(bundle);
     renderFilters();
+    const [title, sub] = PAGE[state.view] || PAGE.queue;
+    $("page-title").textContent = title;
+    $("page-sub").textContent = sub;
+    document.body.classList.toggle("tool-view", state.view !== "queue");
+    document.body.classList.toggle("map-mode", state.view === "map");
+    if (state.view === "screen") { renderScreen(bundle); return; }
+    if (state.view === "notes") { renderNotes(bundle); return; }
+    if (state.view === "map") { renderMap(bundle); return; }
     const rows = buildQueue(bundle);
     if (state.selectedId && !rows.some((r) => r.hit.hit_id === state.selectedId)) {
       // keep selection even if filtered out? Better to show it anyway in the stage, queue just won't highlight.
     }
+    const fkey = JSON.stringify([state.filter.decision, state.filter.labeled, state.filter.disagree, state.filter.category, state.filter.q]);
+    if (state._fkey !== undefined && state._fkey !== fkey && rows.length && !rows.some((r) => r.hit.hit_id === state.selectedId)) {
+      state.selectedId = rows[0].hit.hit_id;
+      state.selectedCustomer = null;
+    }
+    state._fkey = fkey;
     if (!state.selectedId && rows.length) state.selectedId = rows[0].hit.hit_id;
     renderQueue(rows);
     renderCase(bundle);
@@ -1122,11 +1857,53 @@
     render();
   }
 
+  function askForData(message) {
+    // Static hosting (GitHub Pages): the analyst supplies the dataset; it never leaves the browser.
+    return new Promise((resolve) => {
+      const drop = $("data-drop"), input = $("data-file"), status = $("drop-status"), zone = $("drop-zone");
+      $("boot-load").hidden = true;
+      drop.hidden = false;
+      status.textContent = message || "";
+      status.classList.toggle("err", !!message);
+      let busy = false;
+      const go = async (files) => {
+        if (busy || !files || !files.length) return;
+        busy = true; zone.classList.add("working"); status.classList.remove("err");
+        try {
+          const bundle = await window.FathomLoader.fromFiles(files, (m) => { status.textContent = m + "…"; });
+          drop.hidden = true; $("boot-load").hidden = false;
+          resolve(bundle);
+        } catch (err) {
+          status.textContent = err.message || String(err); status.classList.add("err");
+        } finally { busy = false; zone.classList.remove("working"); }
+      };
+      input.onchange = () => go(input.files);
+      $("data-folder").onchange = (e) => go(e.target.files);
+      zone.ondragover = (e) => { e.preventDefault(); zone.classList.add("over"); };
+      zone.ondragleave = () => zone.classList.remove("over");
+      zone.ondrop = (e) => { e.preventDefault(); zone.classList.remove("over"); go(e.dataTransfer.files); };
+    });
+  }
+
   async function loadBundle() {
     $("boot-msg").textContent = "Loading case files…";
-    const res = await fetch("data/bundle.json", { cache: "no-store" });
-    if (!res.ok) throw new Error(`Failed to load data/bundle.json (${res.status}). Run python3 prepare.py and serve from /workspace/track2_ui.`);
-    state.bundle = await res.json();
+    let res = null;
+    // The hosted site (Vercel) never ships a bundle (participant data stays off the web), so don't ask for one.
+    const staticSite = /\.(vercel\.app|github\.io)$/i.test(location.hostname) || new URLSearchParams(location.search).has("static");
+    if (!staticSite) {
+      try { res = await fetch("data/bundle.json", { cache: "no-store" }); } catch (_) { res = null; }
+    }
+    if (res && res.ok) {
+      state.bundle = await res.json();
+      state.dataSource = "server";
+    } else {
+      if (!window.FathomLoader) throw new Error("No data/bundle.json and no in-browser loader. Run python3 ui/serve.py.");
+      const cached = await window.FathomLoader.getCached();
+      state.bundle = cached || await askForData();
+      state.dataSource = "browser";
+      render();
+      return;
+    }
     // If a live output file is being served, prefer it over sample predictions.
     try {
       const live = await fetch("/track2/output/dev.jsonl", { cache: "no-store" });
@@ -1142,6 +1919,7 @@
   }
 
   async function pollMeta() {
+    if (state.dataSource === "browser") return; // hosted site: nothing on the server to watch
     try {
       const res = await fetch("data/meta.json", { cache: "no-store" });
       if (!res.ok) return;
@@ -1157,6 +1935,14 @@
   function bind() {
     $("q").addEventListener("input", (e) => {
       state.filter.q = e.target.value;
+      render();
+    });
+    $("btn-change-data").addEventListener("click", async () => {
+      await window.FathomLoader.clearCached();
+      $("boot").classList.remove("done");
+      state.bundle = await askForData();
+      state.selectedId = null; state.mapPos = null;
+      $("boot").classList.add("done");
       render();
     });
     $("btn-reload").addEventListener("click", () => {
@@ -1178,7 +1964,7 @@
     $("help").addEventListener("click", (e) => { if (e.target.id === "help") $("help").hidden = true; });
 
     document.addEventListener("keydown", (e) => {
-      const inField = e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA");
+      const inField = e.target && ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName);
       if (e.key === "Escape") {
         if (!$("help").hidden) { $("help").hidden = true; return; }
         if (inField) { e.target.blur(); return; }
@@ -1188,8 +1974,9 @@
       if (inField) return;
       if (e.key === "?" || (e.key === "/" && e.shiftKey)) { e.preventDefault(); toggleHelp(); return; }
       if (e.key === "/") { e.preventDefault(); $("q").focus(); $("q").select(); return; }
-      if (e.key === "j" || e.key === "J") { move(1); return; }
-      if (e.key === "k" || e.key === "K") { move(-1); return; }
+      if ((e.key === "j" || e.key === "J") && state.view === "queue") { move(1); return; }
+      if ((e.key === "k" || e.key === "K") && state.view === "queue") { move(-1); return; }
+      if (["1", "2", "3", "4", "l", "L", "d", "D"].includes(e.key)) state.view = "queue";
       if (e.key === "1") { state.filter.decision = "ALL"; render(); }
       if (e.key === "2") { state.filter.decision = "DIFFERENT_ENTITY"; render(); }
       if (e.key === "3") { state.filter.decision = "SAME_ENTITY"; render(); }
@@ -1206,6 +1993,7 @@
       if (id && state.bundle && state.bundle.hits[id] && id !== state.selectedId) {
         state.selectedId = id;
         state.selectedCustomer = null;
+        state.view = "queue";
         render();
       }
     });
