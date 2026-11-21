@@ -608,3 +608,24 @@ kbd {
 .map-node.shared .mn-icon { background: var(--text); color: #fff; border-color: var(--text); }
 @media (max-width: 1100px) { .map-search { width: 260px; } }
 @media (max-width: 900px) { .map-actions { flex-wrap: wrap; width: 100%; } .map-search { width: 100%; } }
+
+/* ---------- data drop (static hosting) ---------- */
+#boot-load { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+#boot-load[hidden] { display: none; }
+.data-drop { width: min(520px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 12px; text-align: left; margin-top: 8px; }
+.data-drop[hidden] { display: none; }
+.data-drop h1 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 500; letter-spacing: -0.015em; }
+.data-drop p { margin: 0; color: var(--text-2); font-size: 14px; line-height: 21px; }
+.drop-zone { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 28px 20px; margin-top: 4px; background: var(--card); border: 1.5px dashed var(--line-strong); border-radius: var(--r-panel); cursor: pointer; text-align: center; transition: border-color 150ms var(--ease), background-color 150ms var(--ease); }
+.drop-zone:hover, .drop-zone.over { border-color: var(--text); background: var(--raised); }
+.drop-zone.working { opacity: 0.7; pointer-events: none; }
+.drop-zone .ico { width: 22px; height: 22px; color: var(--text-2); }
+.dz-main { font-size: 14px; color: var(--text); }
+.dz-main b { font-weight: 500; }
+.dz-sub { font-size: 12px; color: var(--text-3); }
+.drop-alt { font-size: 13px; color: var(--text-2); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.drop-alt .link-btn { font-size: 13px; cursor: pointer; }
+.drop-status { min-height: 20px; font-size: 13px; color: var(--text-2); }
+.drop-status.err { color: var(--same-ink); }
+.drop-note { font-size: 12.5px !important; color: var(--text-3) !important; }
+.change-data { margin-top: 8px; }
