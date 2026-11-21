@@ -1,4 +1,9 @@
 #!/bin/sh
 # Usage: system/run <data folder> <output file>
+# Works from any working directory and with spaces in paths. Pin the hash seed and make sure
+# the sibling modules are importable even when the caller sets PYTHONSAFEPATH or PYTHONPATH.
+here="$(cd "$(dirname "$0")" && pwd)"
+unset PYTHONSAFEPATH
 export PYTHONHASHSEED=0
-exec python3 "$(dirname "$0")/screen.py" "$@"
+export PYTHONPATH="$here"
+exec python3 "$here/screen.py" "$@"

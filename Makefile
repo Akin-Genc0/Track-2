@@ -18,6 +18,7 @@ test:
 	$(PYTHON) tests/test_loader.py
 	$(PYTHON) tests/test_runner_boundary.py
 	$(PYTHON) tests/test_real_format.py
+	$(PYTHON) tests/test_packaging.py
 	$(PYTHON) -m py_compile system/*.py
 ui:
 	$(PYTHON) ui/serve.py
