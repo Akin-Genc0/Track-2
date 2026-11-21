@@ -75,3 +75,28 @@ Already correct, so not reported: explicit transition property lists (no `transi
 - In DevTools → Rendering, emulate `prefers-reduced-motion: reduce`. Movement should disappear, fades should remain, and the ID scroll should become instant.
 - Performance: every animated property is `transform` or `opacity`. No layout properties animate.
 - Screenshots are refreshed in `ui/screenshots/`.
+
+## 8. Refinement pass 2: QA at 1280×800 and 1440×900
+
+Additional skills applied: `design-taste-frontend`, `impeccable` (context, craft floor, polish playbook, detector), `emil-design-eng`, `animation-vocabulary`, and the `frontend-app-builder` visual-QA checklist. shadcn/ui served as a reference for control geometry only. No packages were added.
+
+**Committed world kept on purpose.** The craft floor and the taste skill both discourage hard offset shadows, hatching, grid paper and Inter. Each also says that a committed visual world overrides them, and Akin's sketch desk is that world. The hatching carries meaning (it marks "contradicts"). The impeccable detector's remaining flags (`overused-font`, `repeating-stripes-gradient`, and `marquee` on the boot progress bar, which is a load indicator) are therefore deliberate and stay.
+
+| # | Found | Size | Fix |
+| --- | --- | --- | --- |
+| 1 | The six header stats overflowed and scrolled horizontally | 1280 | Tighter stat padding at ≤1366px; Reload collapses to its icon |
+| 2 | The "Date of birth" tile label wrapped, so the three fact tiles had uneven heights | 1280 | Tile label "DOB" (the table keeps "Date of birth"); nowrap labels; tighter state-pill tracking at ≤1366px |
+| 3 | The "List entry" key wrapped inside the tiles | 1280 | Key shortened to "List"; the table header still says "List entry" |
+| 4 | Long names were truncated with no way to read them | both | `title` on truncated tile values |
+| 5 | Unicode glyphs stood in for icons (`= ≠ ? ✓ +`) | both | Lucide-style inline SVG icons (equal, not-equal, help, check, x, chevron, shield-check, alert, search-x, search, refresh, upload, keyboard), one stroke family |
+| 6 | Thick `border-left` accents on the practice-label row and on contradicting table rows | both | Replaced with a check / x badge and a bold label; the hatching already carries the state |
+| 7 | Functional text below 11px (detector `undersized-ui-text`, 34 declarations) | both | An 11px floor across labels, pills, badges and tabs |
+| 8 | Buttons, chips and toggles each had their own height and padding | both | Shared `--control-h: 32px` / `--control-h-sm: 28px`, one focus ring (2px ink, 2px offset) |
+| 9 | Evidence cards lifted on hover even though they are data being read | both | Hover lift removed (Emil: functional data does not move for style) |
+| 10 | `--text-faint` #6f6f6f measured about 4.3:1 on the rail's #e9e9e9 | both | Changed to #636363 (≥4.5:1) |
+| 11 | Browser surfaces were unthemed | both | `caret-color` / `accent-color` set to ink; `tabular-nums` on table cells, tiles, IDs and counts |
+| 12 | Em-dashes in visible copy ("—" for missing values, page title) | both | "Not on file" / "n/a"; title "Fathom · Watchlist entity review" |
+| 13 | Long evidence values (emails) could overflow card rows | 1440 | `overflow-wrap: anywhere` on evidence values |
+| 14 | "More fields" used a text `+` | both | Chevron that rotates 90° on open (180ms, `--ease-out`, transform only) |
+
+Re-verified after fixes: no page or header overflow at either size, no console errors, and the keyboard path (j/k, 1–4, /, Esc, ?), ID-chip jumps, filter count ticks and the empty state all pass in headless Chrome. Screenshots 01–10 were recaptured.

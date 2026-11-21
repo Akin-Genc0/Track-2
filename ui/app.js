@@ -58,6 +58,32 @@
 
   const $ = (id) => document.getElementById(id);
 
+  // Lucide-style icons (24px grid, round caps), drawn inline so the desk stays dependency-free.
+  const ICONS = {
+    check: ["M20 6 9 17l-5-5"],
+    x: ["M18 6 6 18", "m6 6 12 12"],
+    equal: ["M5 9h14", "M5 15h14"],
+    notEqual: ["M5 9h14", "M5 15h14", "M19 5 5 19"],
+    help: ["M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"],
+    chevron: ["m9 18 6-6-6-6"],
+    shield: ["M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z", "m9 12 2 2 4-4"],
+    alert: ["m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3", "M12 9v4", "M12 17h.01"],
+    searchX: ["m13.5 8.5-5 5", "m8.5 8.5 5 5", "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z", "m21 21-4.3-4.3"],
+  };
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  function icon(name, cls) {
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("class", "icon" + (cls ? " " + cls : ""));
+    svg.setAttribute("aria-hidden", "true");
+    for (const d of ICONS[name] || []) {
+      const p = document.createElementNS(SVG_NS, "path");
+      p.setAttribute("d", d);
+      svg.appendChild(p);
+    }
+    return svg;
+  }
+
   function el(tag, attrs, ...children) {
     const n = document.createElement(tag);
     if (attrs) {
@@ -472,7 +498,7 @@
   }
 
   function fmtPct(x) {
-    if (x == null || Number.isNaN(x)) return "—";
+    if (x == null || Number.isNaN(x)) return "n/a";
     return `${(x * 100).toFixed(1)}%`;
   }
 
@@ -497,14 +523,14 @@
     const stat = (cls, k, v, sub, title) =>
       el("div", { class: "stat " + cls, title },
         el("div", { class: "k" }, k),
-        el("div", { class: "v" }, el("span", { class: "num" }, v), sub ? el("em", null, sub) : null));
+        el("div", { class: "v" }, el("span", { class: "num" }, v), cls === "safe" ? icon("shield", "stat-icon") : null, sub ? el("em", null, sub) : null));
     $("stats").replaceChildren(
       stat("total", "Hits", String(c.total), c.pending ? `${c.pending} pending` : null),
       stat("cleared", "Cleared", String(c.DIFFERENT_ENTITY), null, "Decided DIFFERENT_ENTITY"),
       stat("match", "Matches", String(c.SAME_ENTITY), null, "Decided SAME_ENTITY"),
       stat("review", "Review", String(c.REVIEW), null, "Sent to a human"),
-      stat("score", "Practice", s.labeled ? `${s.correct}/${s.labeled}` : "—", s.labeled ? "correct" : "no labels", scoreTitle),
-      stat(s.labeled ? (s.unsafe ? "danger" : "safe") : "", "Unsafe clears", s.labeled ? String(s.unsafe) : "—", null,
+      stat("score", "Practice", s.labeled ? `${s.correct}/${s.labeled}` : "n/a", s.labeled ? "correct" : "no labels", scoreTitle),
+      stat(s.labeled ? (s.unsafe ? "danger" : "safe") : "", "Unsafe clears", s.labeled ? String(s.unsafe) : "n/a", null,
         "Cleared (DIFFERENT_ENTITY) when the practice label is SAME_ENTITY or REVIEW. Costs 60 each."),
     );
     const live = !s.sample && Object.keys(predictions(bundle)).length;
@@ -585,7 +611,7 @@
       ),
       el("div", { class: "q-right" },
         el("span", { class: "mini " + cls }, row.decision === "PENDING" ? "Pending" : DECISION_LABEL[row.decision] || row.decision),
-        row.lab ? el("span", { class: "flag" + (row.disagree ? " bad" : "") }, row.disagree ? "Label differs" : "Labeled") : el("span", { class: "flag cat" }, row.cat)
+        row.lab ? el("span", { class: "flag" + (row.disagree ? " bad" : "") }, row.disagree ? icon("alert") : null, row.disagree ? "Label differs" : "Labeled") : el("span", { class: "flag cat" }, row.cat)
       )
     );
   }
@@ -600,6 +626,7 @@
     if (!rows.length) {
       const f = state.filter;
       box.appendChild(el("div", { class: "queue-empty" },
+        icon("searchX", "qe-icon"),
         el("div", { class: "qe-title" }, "Nothing here"),
         el("div", { class: "qe-sub" }, f.q ? `No hits match “${f.q}” with these filters.` : "No hits match these filters."),
         el("button", {
@@ -674,7 +701,7 @@
     return countrySet(vals, lookup, notCountries);
   }
 
-  function displayList(items, empty = "—") {
+  function displayList(items, empty = "Not on file") {
     const arr = asList(items);
     if (!arr.length) return el("span", { class: "missing" }, empty);
     if (arr.length === 1) return linkText(String(arr[0]));
@@ -828,7 +855,7 @@
         key: "life",
         weak: true,
         label: "Life status",
-        left: el("span", { class: "missing" }, "—"),
+        left: el("span", { class: "missing" }, "Not on file"),
         right: displayList([hit.life_status, hit.deceased_date && `Deceased ${hit.deceased_date}`].filter(Boolean), "Not on file"),
         status: hit.deceased_date ? "conflict" : "unknown",
       },
@@ -836,7 +863,7 @@
         key: "gender",
         weak: true,
         label: "Gender",
-        left: el("span", { class: "missing" }, "—"),
+        left: el("span", { class: "missing" }, "Not on file"),
         right: hit.gender || el("span", { class: "missing" }, "Not on file"),
         status: "unknown",
       },
@@ -971,12 +998,12 @@
   }
 
   const STATE_WORD = { agree: "Agrees", conflict: "Contradicts", unknown: "Unknown" };
-  const STATE_GLYPH = { agree: "=", conflict: "≠", unknown: "?" };
+  const STATE_ICON = { agree: "equal", conflict: "notEqual", unknown: "help" };
   const ROW_ORDER = ["name", "dob", "nationality", "countries", "type", "life", "address", "ids", "occupation", "gender"];
 
   function stateMark(status) {
     return el("span", { class: "state " + status },
-      el("span", { class: "glyph", "aria-hidden": "true" }, STATE_GLYPH[status] || "?"),
+      el("span", { class: "glyph", "aria-hidden": "true" }, icon(STATE_ICON[status] || "help")),
       el("span", { class: "w" }, STATE_WORD[status] || status));
   }
 
@@ -985,11 +1012,11 @@
     const [c, l] = (row && row.brief) || [null, null];
     const side = (k, v) => el("div", { class: "ft-side" },
       el("span", { class: "ft-k" }, k),
-      v ? el("span", { class: "ft-v" }, v) : el("span", { class: "ft-v missing" }, "not on file"));
+      v ? el("span", { class: "ft-v", title: v }, v) : el("span", { class: "ft-v missing" }, "not on file"));
     return el("div", { class: "fact-tile stagger " + st, style: `--d:${delay}ms` },
       el("div", { class: "ft-top" }, el("span", { class: "ft-label" }, label), stateMark(st)),
       side("Customer", c),
-      side("List entry", l));
+      side("List", l));
   }
 
   function emptyStage(title, sub) {
@@ -1100,7 +1127,7 @@
       ),
       el("div", { class: "facts" },
         factTile("Name", byKey.name, 40),
-        factTile("Date of birth", byKey.dob, 75),
+        factTile("DOB", byKey.dob, 75),
         factTile("Countries", byKey.countries, 105)
       )
     );
@@ -1126,6 +1153,7 @@
     if (lab) {
       const disagree = pred && pred.decision && pred.decision !== lab.decision;
       parts.push(el("div", { class: "label-row " + (pred && pred.decision ? (disagree ? "disagree" : "agree") : "") },
+        pred && pred.decision ? el("span", { class: "lab-icon" }, icon(disagree ? "x" : "check")) : null,
         el("div", null, el("div", { class: "lab-k" }, "Practice label"), `${DECISION_LABEL[lab.decision] || lab.decision}  ·  ${(lab.reason_codes || []).join(", ")}`),
         pred && pred.decision
           ? el("div", null, el("div", { class: "lab-k" }, disagree ? "System disagrees" : "System agrees"), `${DECISION_LABEL[pred.decision]}  ·  ${pred.reason_code || ""}`)
@@ -1180,7 +1208,7 @@
     strong.forEach((r, i) => table.appendChild(line(r, i)));
     if (weak.length) {
       const more = el("details", { class: "more", open: state.moreFields || null },
-        el("summary", null, `${weak.length} more fields`, el("span", { class: "more-hint" }, weak.map((r) => r.label.toLowerCase()).join(", "))),
+        el("summary", null, icon("chevron", "more-chev"), `${weak.length} more fields`, el("span", { class: "more-hint" }, weak.map((r) => r.label.toLowerCase()).join(", "))),
         ...weak.map((r) => line(r)));
       more.addEventListener("toggle", () => { state.moreFields = more.open; });
       table.appendChild(more);
@@ -1196,7 +1224,7 @@
 
     if (kyc) {
       parts.push(el("div", { class: "foot-note" },
-        "Verified identity from approved check ", linkText(kyc.check_id), ` (${kyc.checked_at || "undated"}): ${kyc.verified_name || "—"}, ${kyc.verified_dob || "no DOB"}, document country ${kyc.document_country || "—"}.`
+        "Verified identity from approved check ", linkText(kyc.check_id), ` (${kyc.checked_at || "undated"}): ${kyc.verified_name || "no name"}, ${kyc.verified_dob || "no DOB"}, document country ${kyc.document_country || "not recorded"}.`
       ));
     } else if (!cust) {
       parts.push(el("div", { class: "foot-note" },
