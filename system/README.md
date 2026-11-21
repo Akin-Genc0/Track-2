@@ -3,7 +3,7 @@
 ```
 system/run <data folder> <output file>       # e.g.  system/run dev output/dev.jsonl
 ```
-One JSON line per watchlist hit: a decision, policy reason code, resolved customer ID, explanation and evidence IDs. The resolver uses Python's standard library; there is no model, prompt, API key or network dependency. The 819-hit dev run takes about 15 seconds on one laptop core (Apple Silicon, Python 3.11) with no API cost.
+One JSON line per watchlist hit: a decision, policy reason code, resolved customer ID, explanation and evidence IDs. The resolver uses Python's standard library; there is no model, prompt, API key or network dependency. The 819-hit dev run takes about 16 seconds on one laptop core (Apple Silicon, Python 3.11) with no API cost.
 
 ## Architecture
 
@@ -34,7 +34,7 @@ There is no randomness, no model, no network and no clock. Every input is sorted
 - 50 practice labels: 50/50 decisions correct, 0 unsafe clearances, local decision score 1.000. Reason code fits 50/50, customer record right 50/50, evidence identical to the reference on all 50.
 - All 819 dev hits: 464 DIFFERENT_ENTITY (56.7%), 125 SAME_ENTITY (15.3%), 230 REVIEW (28.1% review rate); see `audit/CROSSCHECK_JOHN.md` for the cross-check that moved one clear to REVIEW. The same run with any `PYTHONHASHSEED` gives byte-identical output.
 - Final integrated tree (after merging the loader hardening and repo polish): `tools/check_submission.py` passes on `output/dev.jsonl` (every row valid, every reason 2–4 sentences, every conclusive decision cites evidence); `tests/test_policy.py` 24/24, `tests/test_ages.py` 21/21, `tests/test_loader.py` and `tests/test_runner_boundary.py` pass; `redteam/run_all.py --strict` fails only the 2 F12 team-call cases; shadow seeds 7 and 21 score 0.965 with 0 unsafe; `tools/unseen_sim.py` shows 0 crashes, 0 missing rows and 0 moves to clear across 7 schema mutations; no `tools/perturb.py` rewrite moves a decision towards DIFFERENT_ENTITY.
-- [Spot check of 20 clears and 10 reviews](../REVIEW_NOTES.md): three clears warrant checking the link between the screened holder and the approved identity check. The practice score does not measure this risk across the unlabelled set.
+- [Spot check of 20 clears and 10 reviews](../REVIEW_NOTES.md) (historical, taken at 45ddc8c): three clears warrant checking the link between the screened holder and the approved identity check; all three are still clears today (see "Shared-account KYC checks" below). The practice score does not measure this risk across the unlabelled set.
 
 ## Hardening for the unseen set
 **Policy coverage.** `tests/test_policy.py` has 24 synthetic data rooms, one per rare situation, and all pass:
@@ -162,7 +162,7 @@ on the customer's own applicant, like Akin's three). Turned on, it moves 60 dev 
 - **The official input is the organisers' `dev/` folder.** Alerts nest the screened person under `customer`; hits may include a `details` dict (flattened to text, never read as a date of birth, death date, or country), `first`/`middle`/`last_name`, `best_matching_name`, `subcategories`, a null `place_of_birth`, and an integer `match_score`. `name_variants.json` uses `description` and `groups`. The loader also accepts the optional workbook reconstruction under `data/dev/` (list fields as JSON arrays or "; "-joined strings; structured address dicts with a `country` key). Profile notes over 32,000 characters were cut in the workbook form.
 - **Unresolved alerts** (no record fits) go to REVIEW with `customer_record_id = null`. We never clear on unverified screened data alone. This did not happen in dev.
 - **The policy's rules are applied literally.** For example, a location clear only needs every customer country to differ from every hit country. If the bank's systems are missing a country the customer is linked to, that clear can be wrong. That risk comes from the policy, not from the code.
-- **Clears that rest on the policy alone (risky in the real world).** Most dev clears come from LOCATION_MISMATCH (214 location-only) and NAME_MISMATCH_VERIFIED (79 name-only). They follow the SOP to the letter, but they deserve a look:
+- **Clears that rest on the policy alone (risky in the real world).** Most dev clears come from LOCATION_MISMATCH (216 clears on location alone) and NAME_MISMATCH_VERIFIED (79 on a verified name alone). They follow the SOP to the letter, but they deserve a look:
   - Branch listings, such as "N26 Bank AG - Branch" (UK or Austria) against N26 Bank AG (Germany), are cleared on location (H-19C3BF, H-E2B46A).
   - Verified names that share one part with the hit, such as "Amelia Owusu" against "Owusu-Ansah, Emmanuel Mainoo", or "IFEANYI ADELEYE" against "Adeleke, Ayodele", are cleared because one matched part is not enough under principle 8.
   - Company names that differ only by a legal form, such as "STILE ITALIANO S.R.L. GmbH" (Austria) against "STILE ITALIANO S.R.L." (Italy), are cleared on location.
@@ -173,7 +173,7 @@ on the customer's own applicant, like Akin's three). Turned on, it moves 60 dev 
 - `python3 redteam/run_all.py --strict`: 48 adversarial synthetic cases (2 open, both F12).
 - `python3 tests/test_ages.py`: age-cue probes (real ages read, counts and money not).
 - `python3 tests/test_loader.py`, `python3 tests/test_runner_boundary.py`, `python3 tests/test_real_format.py`: loader tolerance, official-format fixtures, and per-hit fail-safes.
-- `python3 tests/test_packaging.py`: `system/run` is executable and runs from any directory with spaces in paths; no data, workbook, `.env` or API key is tracked.
+- `python3 tests/test_packaging.py`: `system/run` is executable and runs from any directory with spaces in paths; a missing data folder or `hits.jsonl` exits with code 2 and writes nothing; no data, workbook, `.env` or API key is tracked.
 - `python3 tools/check_submission.py output/dev.jsonl dev`: submission format, provenance and 2–4 sentence check.
 - `python3 tools/unseen_sim.py dev`: schema mutations (renamed, stringified, nested, missing, corrupt…); no crash, no move to clear.
 - `TRACK2_DEV=<dev folder> python3 tools/shadow.py gen <dir> 7 && system/run <dir> <out> && python3 tools/shadow.py score <dir> <out>`: shadow test set.
