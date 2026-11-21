@@ -2,10 +2,16 @@
 
 ```
 python3 redteam/run_all.py            # 48 synthetic cases; checks each one still behaves as recorded
-python3 redteam/run_all.py --strict   # checks each case gives a decision the policy allows (36 fail today)
+python3 redteam/run_all.py --strict   # checks each case gives a decision the policy allows (2 fail, both F12)
 ```
-**Status after `bot/fixes`:** F1–F10 fixed in system code (`--strict` fails 2 of 48, both F12, left as a team call). The default
-run now prints FIXED for those cases on purpose; use `--strict` as the gate. Details: system/README.md, "Red team".
+**Current status (final tree, `python3 redteam/run_all.py --strict` re-run; dev decisions identical to main c7fd5d3):**
+46 of 48 cases give a decision the policy allows: 34 FIXED, 12 HOLDS, 2 VULNERABLE. The 2 failures are both F12, the two
+judgement calls left to the team (a support note calling the record DOB a typo, and a customer day/month swap); the policy
+clears both literally. F1–F11 are fixed in system code. The default run prints FIXED for those cases on purpose; use `--strict`
+as the gate. Details: system/README.md, "Red team".
+
+Everything from here down is the **historical** write-up, scored at a22cbf5 before the fixes landed (465 / 125 / 229 on dev then;
+464 / 125 / 230 now). Its counts of open cases describe that commit, not the current code.
 
 Each case in `redteam/cases.py` builds a tiny data room (one customer, one alert, one hit, plus notes, KYC and search rows
 where needed), runs the real `screen.run`, and records the decision. Stdlib only, no pytest. Re-checked against `bot/core-system` @ a22cbf5 (first written against 6f21c02).

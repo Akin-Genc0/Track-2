@@ -18,10 +18,10 @@ def _yy(v):
 
 # date patterns, most specific first; each returns (y, m, d)
 _DATE_PATTERNS = [
-    (re.compile(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b"), lambda g: (g[0], g[1], g[2])),
+    (re.compile(r"\b(\d{4})-(\d{1,2})-(\d{1,2})(?=T\d|\b)"), lambda g: (g[0], g[1], g[2])),  # ISO, optionally with a time
     (re.compile(r"\b(\d{4})/(\d{1,2})/(\d{1,2})\b"), lambda g: (g[0], g[1], g[2])),
     (re.compile(r"\b(\d{1,2})[/.](\d{1,2})[/.](\d{4})\b"), lambda g: (g[2], g[1], g[0])),  # day-first
-    (re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?(?: of)?[- ](" + _MON + r")[-, ]+(\d{4})\b", re.I), lambda g: (g[2], g[1], g[0])),
+    (re.compile(r"\b(\d{1,2})(?:st|nd|rd|th|\.)?(?: of)?[- ](" + _MON + r")[-, ]+(\d{4})\b", re.I), lambda g: (g[2], g[1], g[0])),
     (re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?[-/ ](" + _MON + r")[-/ ,]+(\d{2})\b(?![\d:])", re.I), lambda g: (_yy(g[2]), g[1], g[0])),
     (re.compile(r"\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{2})\b(?![\d/:-]|\.\d)"), lambda g: (_yy(g[2]), g[1], g[0])),
     (re.compile(r"\b(\d{4})\.(\d{1,2})\.(\d{1,2})\b"), lambda g: (g[0], g[1], g[2])),
@@ -82,6 +82,25 @@ def parse_date(s):
     return ds[0][2] if ds else None
 
 
+_NUMERIC_DATE = re.compile(r"\s*(\d{1,2})[/.-](\d{1,2})[/.-](?:\d{4}|\d{2})\s*")
+
+
+def day_month_ambiguous(text):
+    """'03/04/1980' could be 3 April or 4 March: both numbers 12 or less and different."""
+    m = _NUMERIC_DATE.fullmatch(text or "")
+    return bool(m and int(m.group(1)) <= 12 and int(m.group(2)) <= 12 and m.group(1).lstrip("0") != m.group(2).lstrip("0"))
+
+
+def parse_dob(s):
+    """parse_date for a birth date -> (date, ambiguous). The date is read day first as everywhere else; ambiguous is True
+    when its day and month could be swapped ('03/04/1980'), so it may contradict a hit only if both readings do."""
+    if s is None:
+        return None, False
+    s = str(s).strip()
+    ds = find_dates(s)
+    return (ds[0][2], day_month_ambiguous(s[ds[0][0]:ds[0][1]])) if ds else (None, False)
+
+
 def placeholder_dob(d):
     """Filler birth dates (1900-01-01, 1901-01-01, anything before 1901) carry no information."""
     return bool(d) and (d[0] < 1901 or (d[0] == 1901 and d[1] in (None, 1) and d[2] in (None, 1)))
@@ -103,6 +122,18 @@ def date_lt(a, b):
     a_hi = (a[0], a[1] if a[1] else 12, a[2] if a[2] else 31)
     b_lo = (b[0], b[1] if b[1] else 1, b[2] if b[2] else 1)
     return a_hi < b_lo
+
+
+_APPROVED_WORDS = {"approved", "passed", "pass", "clear", "cleared", "verified", "success", "successful", "accepted"}
+_RESULT_NEG = re.compile(r"\b(?:not|no|un\w*|re-?submit\w*|reject\w*|fail\w*|declin\w*|expir\w*|pending|refer\w*|review|consider)\b")
+
+
+def approved_result(v):
+    """A KYC result is approved when its first word is an approval word and nothing negates it
+    ('approved', 'Approved ', 'APPROVED - clear'; never 'not approved' or 'expired - resubmit')."""
+    t = fold(v or "").strip()
+    words = re.findall(r"[a-z]+", t)
+    return bool(words) and words[0] in _APPROVED_WORDS and not _RESULT_NEG.search(t)
 
 
 _COMPANY_KIND = re.compile(r"compan|corp|organi[sz]|entity|business|firm|vessel|ship|aircraft|bank|trust|partnership|fund|foundation|"
@@ -170,13 +201,38 @@ def lev(a, b, cap=3):
     return prev[-1]
 
 
+# ICAO Doc 9303 (part 3) Cyrillic -> Latin; only used to find loose agreement, never to compare across scripts for a clear
+_CYR = dict(zip("абвгдеёжзийклмнопрстуфхцчшщъыьэюяґєіїўђѓјљњћќџѕ",
+                "a b v g d e e zh z i i k l m n o p r s t u f kh ts ch sh shch ie y  e iu ia g ie i i u d g j lj nj c k dz dz".split(" ")))
+
+
+def cyr_latin(p):
+    return "".join(_CYR.get(c, c) for c in p)
+
+
+_SKEL = [("ph", "f"), ("x", "ks"), ("kh", "h"), ("q", "k"), ("ou", "u"), ("oo", "u"), ("w", "u"),
+         ("ee", "i"), ("ie", "i"), ("ey", "i"), ("ei", "i"), ("iy", "i"), ("y", "i")]
+
+
+def skeleton(p):
+    """Transliteration skeleton: 'yaseen'/'yasin' -> 'isn', 'qaradawi' -> 'krd', 'navalnyy' -> 'nvln'."""
+    s = re.sub(r"abd(?:ul|al|el|ol|u)", "abd", p)
+    for a, b in _SKEL:
+        s = s.replace(a, b)
+    s = re.sub(r"(.)\1+", r"\1", s)
+    return s[:1] + re.sub(r"[aeiou]", "", s[1:])
+
+
 class NameMatcher:
     def __init__(self, groups, legal_forms):
         self.group_of = {}
+        self.members = {}
+        self._loose = False
         for gi, g in enumerate(groups):
             for n in g:
                 k = fold(n).strip()
                 self.group_of.setdefault(k, set()).add(gi)
+                self.members.setdefault(gi, []).append(k)
         self.legal_forms = {fold(x).strip().replace(".", "") for x in legal_forms}
 
     def parts(self, name, company=False):
@@ -188,11 +244,30 @@ class NameMatcher:
         ga, gb = self.group_of.get(a), self.group_of.get(b)
         if ga and gb and ga & gb:
             return True
+        if self._edit_ok(a, b):
+            return True
+        if self._loose and len(a) >= 4 and len(b) >= 4 and a[0] == b[0] and skeleton(a) == skeleton(b):
+            return True      # loose only: transliterations of one spelling ('yaseen'/'yasin', 'aleksey'/'alexei')
+        # a misspelling of any member of one part's variant group ('Muammad' for 'Mohammed', grouped with 'Muhammad')
+        return any(self._edit_ok(v, b) for g in ga or () for v in self.members[g]) or \
+            any(self._edit_ok(a, v) for g in gb or () for v in self.members[g])
+
+    @staticmethod
+    def _edit_ok(a, b):
         short = min(len(a), len(b))
         if short < 4:
-            return False
+            return a == b
         lim = 1 if short <= 6 else 2
         return lev(a, b, lim) <= lim
+
+    def agree_parts_loose(self, A, B):
+        """agree_parts, also matching transliterations of one spelling and Cyrillic parts to their Latin reading.
+        Only used to stop a clear on the verified name, never to confirm."""
+        self._loose = True
+        try:
+            return self.agree_parts([cyr_latin(p) for p in A], [cyr_latin(p) for p in B])
+        finally:
+            self._loose = False
 
     def _candidates(self, A, B):
         c = []
@@ -208,6 +283,18 @@ class NameMatcher:
             for i in range(len(A) - 1):
                 if b == A[i] + A[i + 1] or b == A[i + 1] + A[i]:
                     c.append((frozenset([i, i + 1]), frozenset([j])))
+        if self._loose:      # particle-split compound: 'abdulrahman' vs 'abd al rahman', within the edit limit
+            for X, Y, flip in ((A, B, False), (B, A, True)):
+                for i, x in enumerate(X):
+                    if len(x) < 8:
+                        continue
+                    for j in range(len(Y)):
+                        for k in (2, 3):
+                            # not when x already matches one of the joined parts ('logistics' vs 'st'+'logistics')
+                            if j + k <= len(Y) and self._edit_ok(x, "".join(Y[j:j + k])) and \
+                                    not any(self._edit_ok(x, y) for y in Y[j:j + k]):
+                                pair = (frozenset([i]), frozenset(range(j, j + k)))
+                                c.append(pair[::-1] if flip else pair)
         return c
 
     def agree_parts(self, A, B):
@@ -217,24 +304,14 @@ class NameMatcher:
         cands = self._candidates(A, B)
         if not cands:
             return False
-        best = (0, 0, 0)
-
-        def rec(k, ua, ub, n):
-            nonlocal best
-            key = (n, len(ua), len(ub))
-            if key > best:
-                best = key
-            for t in range(k, len(cands)):
-                ia, ib = cands[t]
-                if ia & ua or ib & ub:
-                    continue
-                rec(t + 1, ua | ia, ub | ib, n + 1)
-        if len(cands) > 18:
-            cands = cands[:18]
-        rec(0, frozenset(), frozenset(), 0)
-        n, ca, cb = best
-        if n >= 2:
-            return True
+        # Exact over every candidate, no cap (a cap could clear a long name on a truncated set): two disjoint
+        # matches mean >=2 matched parts; otherwise every pair overlaps, so the best matching is one candidate.
+        # Pairwise check is O(len(cands)^2), bounded by the name lengths.
+        for t, (ia, ib) in enumerate(cands):
+            for ja, jb in cands[t + 1:]:
+                if not (ia & ja or ib & jb):
+                    return True
+        _, ca, cb = max((1, len(ia), len(ib)) for ia, ib in cands)
         if len(A) < len(B):
             return ca == len(A)
         if len(B) < len(A):

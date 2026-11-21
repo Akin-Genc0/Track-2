@@ -14,8 +14,8 @@ def cust(rid, name, dob, nat="United Kingdom", res="GB", email=None, phone=None,
 CASES = []   # (name, customers, accounts, onboarding, kyc, notes, alert, hit, search, expected decision, expected code)
 
 
-def case(name, customers, alert, hit, exp, code=None, accounts=(), onboarding=(), kyc=(), notes=(), search=()):
-    CASES.append(dict(name=name, customers=customers, alert=alert, hit=hit, exp=exp, code=code, accounts=list(accounts),
+def case(name, customers, alert, hit, exp, code=None, accounts=(), onboarding=(), kyc=(), notes=(), search=(), says=()):
+    CASES.append(dict(name=name, customers=customers, alert=alert, hit=hit, exp=exp, code=code, says=list(says), accounts=list(accounts),
                       onboarding=list(onboarding), kyc=list(kyc), notes=list(notes), search=list(search)))
 
 
@@ -115,6 +115,85 @@ case("non_qualifying_report", [cust("CUS-000023", "Tom Okeke", "2004-01-01")], a
 case("list_numbers_not_ages", [cust("CUS-000024", "Rob James", "1955-01-01")], alert("A-000024", "Rob James", "ACC-24"),
      hit("A-000024", "Robert James", countries=["United Kingdom"], notes="According to Regulator X; September 15, 2005: order issued as the security was not (1) covered, (2) exempt or (3) registered."),
      "REVIEW", accounts=[acc("ACC-24", "CUS-000024")])
+# 23 a month-only dated report ("According to ...; January 1997:") is not the policy's full-date form and never clears
+case("month_only_report", [cust("CUS-000025", "Jim Okafor", "1993-03-11")], alert("A-000025", "Jim Okafor", "ACC-25"),
+     hit("A-000025", "James Okafor", countries=["United Kingdom"], notes="According to Regulator X; January 1997: James Okafor was fined."),
+     "REVIEW", accounts=[acc("ACC-25", "CUS-000025")])
+# 24 two people fit and both are cleared: the reason names each one's own countries
+case("ambiguous_cleared_names_each_country", [cust("CUS-000026", "Ada Eze", "1980-01-01", nat="France", res="FR"),
+                                             cust("CUS-000027", "Ada Eze", "1985-02-02", nat="Chile", res="CL")],
+     alert("A-000026", "Ada Eze"), hit("A-000026", "Ada Eze", countries=["Japan"]), "DIFFERENT_ENTITY", "LOCATION_MISMATCH",
+     says=["CUS-000026, linked to France", "CUS-000027, linked to Chile"])
+# 25 shared account: an onboarding row naming an account the customer does not hold never attaches its check to them
+case("onboarding_wrong_holder_not_attached", [cust("CUS-000028", "Jake Moore", "1980-01-01"), cust("CUS-000029", "Linda Moore", "1982-02-02")],
+     alert("A-000028", "Jake Moore", "ACC-28"), hit("A-000028", "Moore, Jake", countries=["United Kingdom"]), "REVIEW",
+     accounts=[acc("ACC-28", "CUS-000028"), acc("ACC-J", "CUS-000028"), acc("ACC-J", "CUS-000029"), acc("ACC-29", "CUS-000029")],
+     onboarding=[onb("ACC-29", "CUS-000028", "APP-29")], kyc=[chk("KYC-29", "APP-29", "Linda Moore", "1982-02-02", "United Kingdom", "approved", "2024-01-01")])
+# 26 an onboarding row without an account attaches when the customer holds no shared account ...
+case("onboarding_no_account_single_holder", [cust("CUS-000030", "Jake Morey", "1980-01-01")], alert("A-000030", "Jake Morey", "ACC-30"),
+     hit("A-000030", "Morey, Jake", countries=["United Kingdom"]), "DIFFERENT_ENTITY", "NAME_MISMATCH_VERIFIED", accounts=[acc("ACC-30", "CUS-000030")],
+     onboarding=[onb(None, "CUS-000030", "APP-30")], kyc=[chk("KYC-30", "APP-30", "Linda Morey", "1980-01-01", "United Kingdom", "approved", "2024-01-01")])
+# 27 ... but not when they hold a joint account (the check may be the other holder's)
+case("onboarding_no_account_shared_holder", [cust("CUS-000031", "Jake Moran", "1980-01-01"), cust("CUS-000032", "Linda Moran", "1982-02-02")],
+     alert("A-000031", "Jake Moran", "ACC-31"), hit("A-000031", "Moran, Jake", countries=["United Kingdom"]), "REVIEW",
+     accounts=[acc("ACC-31", "CUS-000031"), acc("ACC-31", "CUS-000032")],
+     onboarding=[onb(None, "CUS-000031", "APP-31")], kyc=[chk("KYC-31", "APP-31", "Linda Moran", "1982-02-02", "United Kingdom", "approved", "2024-01-01")])
+# 28 same year, day and month swapped: not a contradiction, and the reason says so
+case("dob_day_month_swap", [cust("CUS-000033", "Igor Volkov", "1980-04-03")], alert("A-000033", "Igor Volkov", "ACC-33"),
+     hit("A-000033", "Volkov, Igor", dobs=["1980-03-04"], countries=["United Kingdom"]), "REVIEW", accounts=[acc("ACC-33", "CUS-000033")],
+     says=["day and month swapped"])
+# 29 a swap with agreeing names also stops a country clear (the dates may well agree)
+case("dob_swap_blocks_location", [cust("CUS-000034", "Igor Volkova", "1980-04-03")], alert("A-000034", "Igor Volkova", "ACC-34"),
+     hit("A-000034", "Volkova, Igor", dobs=["1980-03-04"], countries=["Peru"]), "REVIEW", accounts=[acc("ACC-34", "CUS-000034")],
+     says=["day and month swapped"])
+# 30 a phone note saying the record DOB is a typo blocks a DOB clear
+case("note_disputes_record_dob", [cust("CUS-000035", "Ivan Sokolov", "1990-05-01", email="is@x.example")], alert("A-000035", "Ivan Sokolov", "ACC-35"),
+     hit("A-000035", "Sokolov, Ivan", dobs=["1970-05-01"], countries=["United Kingdom"]), "REVIEW", accounts=[acc("ACC-35", "CUS-000035")],
+     notes=[{"note_id": "NOTE-35", "requester_email": "is@x.example", "created_at": "2024-01-01", "channel": "phone",
+             "text": "Customer called: the date of birth on file is a typo, correct year is 1970."}], says=["NOTE-35", "on file is wrong"])
+# 31 a verified-name clear names every hit name it was compared with
+case("verified_name_lists_aliases", [cust("CUS-000036", "Sam Reed", "1980-01-01")], alert("A-000036", "Sam Reed", "ACC-36"),
+     hit("A-000036", "Reed, Samuel", aliases=["Sammy Reed"], countries=["United Kingdom"]), "DIFFERENT_ENTITY", "NAME_MISMATCH_VERIFIED",
+     accounts=[acc("ACC-36", "CUS-000036")], onboarding=[onb("ACC-36", "CUS-000036", "APP-36")],
+     kyc=[chk("KYC-36", "APP-36", "Laura Reed", "1980-01-01", "United Kingdom", "approved", "2024-01-01")], says=["Reed, Samuel; Sammy Reed"])
+# 32 a birth date from a search result says why it was used
+case("search_dob_says_why", [cust("CUS-000037", "Paolo Conti", "1985-01-01", nat="Italy", res="IT")], alert("A-000037", "Paolo Conti", "ACC-37"),
+     hit("A-000037", "Conti, Paolo", countries=["Italy"]), "DIFFERENT_ENTITY", "DOB_MISMATCH", accounts=[acc("ACC-37", "CUS-000037")],
+     search=[{"result_id": "SR-37", "query": "Paolo Conti", "title": "Paolo Conti", "snippet": "Paolo Conti, a politically exposed person in Italy, born 1950."}],
+     says=["SR-37", "used only because the search query, the listing phrase", "Italy all matched"])
+# 33 a place that cannot be tied to a country stops a country clear, and the reason says so
+case("unplaced_country_says_why", [cust("CUS-000038", "Ali Rahimi", None)], alert("A-000038", "Ali Rahimi", "ACC-38"),
+     hit("A-000038", "Rahimi, Ali", countries=["Peru", "Zentravia"]), "REVIEW", accounts=[acc("ACC-38", "CUS-000038")],
+     says=["Zentravia", "cannot be tied to a country"])
+# 34 a misspelling of any variant-group member matches the group: 'Muammad' (1 edit from 'muhammad') agrees with 'Mohammed',
+# so name and DOB agree and the country difference cannot clear the hit (perturbation of H-23805C)
+case("misspelt_variant_member_matches_group", [cust("CUS-000039", "Muammad Usman", "1994-08-24", nat="Nigeria", res="NG")],
+     alert("A-000039", "Muammad Usman", "ACC-39"), hit("A-000039", "Usman, Mohammed", dobs=["1994"], countries=["Pakistan"]), "REVIEW",
+     accounts=[acc("ACC-39", "CUS-000039")])
+# 35 a customer DOB '03/04/1980' could be 3 April or 4 March: it may contradict a hit only if both readings do,
+# so a hit dated March 1980 is not cleared on the month (and the day-first reading does not confirm it either)
+case("customer_dob_ambiguous_day_month", [cust("CUS-000040", "Pavel Orlov", "03/04/1980")], alert("A-000040", "Pavel Orlov", "ACC-40"),
+     hit("A-000040", "Orlov, Pavel", dobs=["1980-03"], countries=["United Kingdom"]), "REVIEW", accounts=[acc("ACC-40", "CUS-000040")],
+     says=["could be 1980-04-03 or 1980-03-04"])
+# 36 ... but '25/04/1980' can only be 25 April and still contradicts March 1980
+case("customer_dob_unambiguous_day_first", [cust("CUS-000041", "Pavel Orlova", "25/04/1980")], alert("A-000041", "Pavel Orlova", "ACC-41"),
+     hit("A-000041", "Orlova, Pavel", dobs=["1980-03"], countries=["United Kingdom"]), "DIFFERENT_ENTITY", "DOB_MISMATCH", accounts=[acc("ACC-41", "CUS-000041")])
+# 37 the same holds for a verified DOB from a KYC check ...
+case("kyc_dob_ambiguous_day_month", [cust("CUS-000042", "Pavel Orlik", "1980-04-03")], alert("A-000042", "Pavel Orlik", "ACC-42"),
+     hit("A-000042", "Orlik, Pavel", dobs=["1980-03"], countries=["United Kingdom"]), "REVIEW", accounts=[acc("ACC-42", "CUS-000042")],
+     onboarding=[onb("ACC-42", "CUS-000042", "APP-42")], kyc=[chk("KYC-42", "APP-42", "Pavel Orlik", "03/04/1980", "United Kingdom", "approved", "2024-01-01")])
+# 38 ... and for a DOB read from an identity-verification note
+case("note_dob_ambiguous_day_month", [cust("CUS-000043", "Pavel Orlin", "1980-04-03", email="po@x.example")], alert("A-000043", "Pavel Orlin", "ACC-43"),
+     hit("A-000043", "Orlin, Pavel", dobs=["1980-03"], countries=["United Kingdom"]), "REVIEW", accounts=[acc("ACC-43", "CUS-000043")],
+     notes=[{"note_id": "NOTE-43", "requester_email": "po@x.example", "created_at": "2024-01-01", "channel": "kyc",
+             "text": "Onfido verified the passport of PAVEL ORLIN (DOB 03/04/1980) from the United Kingdom."}])
+# 39 an explanation says which side is missing: no hit DOB -> REVIEW says so; no hit country -> NAME_DOB_MATCH says so
+case("review_says_hit_dob_missing", [cust("CUS-000028", "Ada Obi", "1980-01-01")], alert("A-000028", "Ada Obi"),
+     hit("A-000028", "Ada Obi", countries=["United Kingdom"]), "REVIEW", "INSUFFICIENT_DATA",
+     says=["the hit gives no date of birth to compare"])
+case("name_dob_match_says_country_missing", [cust("CUS-000029", "Ada Nwosu", "1980-01-01")], alert("A-000029", "Ada Nwosu"),
+     hit("A-000029", "Ada Nwosu", dobs=["1980-01-01"]), "SAME_ENTITY", "NAME_DOB_MATCH",
+     says=["because the hit lists no country"])
 
 fails = 0
 for c in CASES:
@@ -126,7 +205,7 @@ for c in CASES:
     out = os.path.join(d, "out.jsonl")
     subprocess.run([RUN, d, out], check=True, stderr=subprocess.DEVNULL)
     r = json.loads(open(out).readline())
-    ok = r["decision"] == c["exp"] and (c["code"] is None or r["reason_code"] == c["code"])
+    ok = r["decision"] == c["exp"] and (c["code"] is None or r["reason_code"] == c["code"]) and all(x in r["reason"] for x in c["says"])
     fails += not ok
     print(("PASS " if ok else "FAIL ") + c["name"], "->", r["decision"], r["reason_code"], "" if ok else "| " + r["reason"])
     shutil.rmtree(d)

@@ -1,5 +1,5 @@
 """Perturbation test: reword free text / reformat dates in a copy of the data room, re-run, measure decision flips.
-Usage: python3 tools/perturb.py data/dev  [variant ...]"""
+Usage: python3 tools/perturb.py dev  [variant ...]"""
 import json, os, random, re, shutil, subprocess, sys, collections
 
 SRC = sys.argv[1]

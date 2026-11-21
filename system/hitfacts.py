@@ -138,9 +138,17 @@ class HitFacts:
         self.name = as_text(hit.get("name"))
         self.aliases = as_list(hit.get("aliases"))
         self.names = [self.name] + self.aliases if self.name else list(self.aliases)
+        # Official hits also have first/middle/last_name and best_matching_name (often "Last, First").
+        # Add them as extra names; they are not used as country/DOB/death evidence.
+        extras = [as_text(hit.get("best_matching_name"))]
+        constructed = " ".join(as_text(hit.get(k)) for k in ("first_name", "middle_name", "last_name") if as_text(hit.get(k)))
+        extras.append(constructed)
+        for extra in extras:
+            if extra and extra not in self.names:
+                self.names.append(extra)
         self.categories = as_list(hit.get("categories"))
-        self.phrase = listing_phrase(hit.get("primary_category"), self.categories)
-        # countries tied to the hit
+        self.phrase = listing_phrase(hit.get("primary_category"), self.categories or as_list(hit.get("subcategories")))
+        # countries tied to the hit (structured fields only — never the flattened `details` text)
         self.countries = []
         self.unplaced = []      # place values we cannot tie to any country: never evidence of a different country
         for f in ("countries", "nationality", "citizenship", "addresses", "place_of_birth"):
@@ -230,7 +238,8 @@ class HitFacts:
                     snip = as_text(sr.get("snippet")) + " " + as_text(sr.get("title"))
                     if self.phrase not in fold(snip):
                         continue
-                    if not (set(countries_in_text(snip)) & set(self.countries)):
+                    match_c = sorted(set(countries_in_text(snip)) & set(self.countries))
+                    if not match_c:
                         continue
                     ys = years_from_age(as_text(sr.get("snippet")), weak=True)
                     born = None
@@ -242,20 +251,23 @@ class HitFacts:
                             born = ds[0][2]
                     rid = as_text(sr.get("result_id"))
                     if born:
-                        self.dobs.append({"years": {born[0]}, "m": born[1], "d": born[2], "src": rid, "kind": "search", "text": snip})
+                        self.dobs.append({"years": {born[0]}, "m": born[1], "d": born[2], "src": rid, "kind": "search", "text": snip, "ctry": match_c})
                         self.search_hits.append(rid)
                     elif ys:
-                        self.dobs.append({"years": ys[0][1], "m": None, "d": None, "src": rid, "kind": "search", "text": snip})
+                        self.dobs.append({"years": ys[0][1], "m": None, "d": None, "src": rid, "kind": "search", "text": snip, "ctry": match_c})
                         self.search_hits.append(rid)
                 if self.dobs:
                     self.dob_source = "search results"
-        # dated reports: "According to ...; <date>: ..."
+        # dated reports: "According to ...; <date>: ..." -- the policy's form is a full date ("September 10, 2025");
+        # month-only or year-only lines ("According to ...; January 1997:") are other wordings and never clear a hit.
         self.reports = []
         for m in _REPORT_RE.finditer(notes):
             d = parse_date(m.group(1))
-            if d and re.match(r"^\s*[A-Za-z0-9]", m.group(1)):
+            if d and d[1] and d[2] and re.match(r"^\s*[A-Za-z0-9]", m.group(1)):
                 self.reports.append(d)
         self.earliest_report = min(self.reports, key=lambda d: (d[0], d[1] or 1, d[2] or 1)) if self.reports else None
+        # Date of death is the structured deceased_date only, never dates inside details/profile prose
+        # other than the exact "According to …; <date>:" report form used above.
         self.deceased = parse_date(hit.get("deceased_date"))
 
     def dob_text(self):

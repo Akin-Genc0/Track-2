@@ -5,7 +5,7 @@ document number on approved KYC checks, transitively)."""
 import re
 from collections import defaultdict
 from data import as_text
-from textutil import parse_date, fold, entity_kind, placeholder_dob
+from textutil import parse_date, fold, entity_kind, placeholder_dob, approved_result
 from countries import norm_country
 
 
@@ -87,7 +87,15 @@ class CustomerIndex:
         self.applicants = defaultdict(list)   # customer_id -> [applicant ids] (account+customer must both match)
         for o in room.onboarding:
             cid, aid, app = as_text(o.get("customer_id")), as_text(o.get("account_id")), as_text(o.get("kyc_applicant_id"))
-            if app and cid:
+            if not (app and cid):
+                continue
+            if aid in self.acc_by_id:
+                # the row names a known account: attach only to a customer who holds it (a shared account's other
+                # holder's check must never become this customer's verified identity)
+                if aid in self.acc_by_cust.get(cid, ()):
+                    self.applicants[cid].append(app)
+            elif all(len(set(self.acc_by_id[a])) == 1 for a in self.acc_by_cust.get(cid, ())):
+                # no usable account on the row: trust its customer_id only when that customer holds no shared account
                 self.applicants[cid].append(app)
         self.kyc_by_app = defaultdict(list)
         for k in room.kyc:
@@ -124,7 +132,7 @@ class CustomerIndex:
         by_doc = defaultdict(set)
         for rid in sorted(C):
             for k in self.kyc_checks_for(rid):
-                if as_text(k.get("result")).lower() in ("approved", "passed", "clear", "verified", "success"):
+                if approved_result(as_text(k.get("result"))):
                     dn = norm_doc(k.get("document_number"))
                     if dn:
                         by_doc[dn].add(rid)

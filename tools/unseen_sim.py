@@ -53,4 +53,4 @@ def main(folder):
             failures += bool(error or missing or clears)
     return bool(failures)
 
-if __name__ == '__main__': sys.exit(main(Path(sys.argv[1] if len(sys.argv)>1 else 'data/dev')))
+if __name__ == '__main__': sys.exit(main(Path(sys.argv[1] if len(sys.argv)>1 else 'dev')))

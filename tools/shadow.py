@@ -719,7 +719,12 @@ def generate(out, seed):
     w("alerts", [g.alerts[i] for i in order]); w("hits", g.hits); w("customers", g.customers); w("accounts", g.accounts)
     w("onboarding", g.onboarding); w("kyc_checks", g.kyc); w("notes", g.notes); w("search_results", g.search)
     w("shadow_labels", g.labels)
-    nv_src = os.path.join(os.path.dirname(__file__), "..", "data", "dev", "name_variants.json")
+    root = os.path.join(os.path.dirname(__file__), "..")
+    candidates = [os.path.join(os.environ["TRACK2_DEV"], "name_variants.json")] if os.environ.get("TRACK2_DEV") else []
+    candidates += [os.path.join(root, rel) for rel in ("dev/name_variants.json", "data/dev/name_variants.json")]
+    nv_src = next((path for path in candidates if os.path.exists(path)), None)
+    if not nv_src:
+        raise SystemExit("name_variants.json not found under $TRACK2_DEV, dev/ or data/dev/; place the official dev folder at ./dev")
     with open(nv_src) as f, open(os.path.join(out, "name_variants.json"), "w") as g2:
         g2.write(f.read())
     print(f"alerts={len(g.alerts)} hits={len(g.hits)} customers={len(g.customers)} labels={collections.Counter(l['decision'] for l in g.labels)}")

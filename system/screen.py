@@ -8,6 +8,7 @@ try:
     from profile import Profile
     from hitfacts import HitFacts, build_search_index
     from decide import Decider
+    from explain import OUTCOME, explain_candidates, explain_each_cleared
 except Exception as exc:
     MODULE_ERROR = type(exc).__name__
 
@@ -40,6 +41,16 @@ def fallback(detail, customer_id=None):
     return {"decision": "REVIEW", "reason_code": "INSUFFICIENT_DATA",
             "customer_record_id": customer_id, "evidence": [],
             "reason": detail + ". An analyst must review this hit before a decision can be made."}
+
+
+def fits_label(people):
+    """'CUS-1, linked to France; CUS-2, linked to Peru and Chile': every fitting customer with their own countries."""
+    def where(prof):
+        cs = sorted(prof.countries)
+        if not cs:
+            return "no country on file"
+        return "linked to " + (cs[0] if len(cs) == 1 else ", ".join(cs[:-1]) + " and " + cs[-1])
+    return "; ".join(f"{pid}, {where(prof)}" for pid, prof in people)
 
 
 def run(folder, out_path):
@@ -114,16 +125,19 @@ def run(folder, out_path):
                         for e in r["evidence"]:
                             if e not in ev:
                                 ev.append(e)
-                    ids = ", ".join(p["primary"] for p, _ in results)
+                    ids = fits_label([(p["primary"], profile_cache[p["primary"]]) for p, _ in results])
                     if len(decs) == 1:
                         r0 = results[0][1]
                         res = dict(r0, customer_record_id="AMBIGUOUS", evidence=ev,
-                                   reason=f"{len(results)} different people in the system of record fit the alert ({ids}); each leads to {r0['decision']}. " + r0["reason"])
+                                   reason=f"{len(results)} different people in the system of record fit the alert ({ids}), and the hit is "
+                                          f"{OUTCOME[r0['decision']]} for each of them. " + r0["reason"])
+                        if r0["decision"] == "DIFFERENT_ENTITY":
+                            res.update(explain_each_cleared([(p["primary"], r) for p, r in results], ids))
                     else:
-                        summary = "; ".join(f"{p['primary']}: {r['decision']} ({r['reason_code']})" for p, r in results)
-                        res = {"decision": "REVIEW", "reason_code": "AMBIGUOUS_CUSTOMER_RECORD", "customer_record_id": "AMBIGUOUS",
-                               "evidence": ev,
-                               "reason": f"{len(results)} different people in the system of record fit the alert ({ids}) and they lead to different decisions: {summary}. A person must decide which customer was screened."}
+                        res = dict(explain_candidates([(p["primary"], r) for p, r in results],
+                                                      f"{len(results)} different people in the system of record fit the alert ({ids}) and they "
+                                                      "lead to different decisions, so a person must decide which customer was screened"),
+                                   decision="REVIEW", reason_code="AMBIGUOUS_CUSTOMER_RECORD", customer_record_id="AMBIGUOUS")
             if res["decision"] == "DIFFERENT_ENTITY" and near:
                 # a clear must also hold for anyone the screened city alone excluded ('Munich' vs 'München')
                 held = []
@@ -135,11 +149,13 @@ def run(folder, out_path):
                         held.append((p, r))
                 if held:
                     ids = ", ".join(p["primary"] for p, _ in held)
-                    summary = "; ".join(f"{p['primary']}: {r['decision']} ({r['reason_code']})" for p, r in held)
-                    res = {"decision": "REVIEW", "reason_code": "AMBIGUOUS_CUSTOMER_RECORD", "customer_record_id": "AMBIGUOUS",
-                           "evidence": list(res["evidence"]) + [e for _, r in held for e in r["evidence"] if e not in res["evidence"]],
-                           "reason": f"The customer who fits the alert is cleared ({res['reason_code']}), but {ids} fits the screened name and "
-                                     f"details except the city spelling and leads to {summary}. A person must decide which customer was screened."}
+                    first = [(res["customer_record_id"], res)] if res.get("customer_record_id") not in (None, "", "AMBIGUOUS") else []
+                    ev0 = list(res["evidence"])
+                    res = dict(explain_candidates(first + [(p["primary"], r) for p, r in held],
+                                                  f"The customer who fits the alert is cleared, but {ids} also fits the screened name and details "
+                                                  "except the spelling of the city, so a person must decide which customer was screened"),
+                               decision="REVIEW", reason_code="AMBIGUOUS_CUSTOMER_RECORD", customer_record_id="AMBIGUOUS")
+                    res["evidence"] = ev0 + [e for e in res["evidence"] if e not in ev0]
             if unavailable and res["decision"] == "DIFFERENT_ENTITY":
                 res = fallback("Required sources were unavailable or partly unreadable: " + ", ".join(unavailable),
                                res.get("customer_record_id"))
@@ -163,6 +179,16 @@ def run(folder, out_path):
 if __name__ == "__main__":
     if len(sys.argv) != 3:
         print("usage: system/run <data folder> <output file>", file=sys.stderr)
+        sys.exit(2)
+    # a wrong path must not pass for an empty work queue: fail loudly before writing anything
+    if not os.path.isdir(sys.argv[1]):
+        print(f"error: data folder not found: {sys.argv[1]}", file=sys.stderr)
+        sys.exit(2)
+    if not os.path.isfile(os.path.join(sys.argv[1], "hits.jsonl")):
+        print(f"error: hits.jsonl not found in data folder: {sys.argv[1]}", file=sys.stderr)
+        sys.exit(2)
+    if not recover_rows(sys.argv[1], "hits")[0]:
+        print(f"error: hits.jsonl has no readable hit records: {os.path.join(sys.argv[1], 'hits.jsonl')}", file=sys.stderr)
         sys.exit(2)
     rows = run(sys.argv[1], sys.argv[2])
     from collections import Counter

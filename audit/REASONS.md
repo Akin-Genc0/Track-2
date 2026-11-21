@@ -1,4 +1,20 @@
+> **Historical audit note.** Counts below are from an earlier commit; current figures are in the root README and `make test` (41 policy tests, 102 checks).
+
 # Reason-quality audit
+
+> **Current status (re-checked on the final tree, decisions, codes, customers and evidence identical to main c7fd5d3).** Everything below this box is the
+> historical audit taken at a22cbf5, before the renderer was wired in; read it as the record of what was found, not as open defects.
+>
+> - The renderer it proposed is integrated as `system/explain.py` ("Integration (not applied)" below is history). `tools/check_submission.py`
+>   passes: every one of the 819 reasons has 2–4 sentences (358 were a single sentence at a22cbf5), and every conclusive decision cites evidence.
+> - Practice labels: 50/50 decisions, reason codes and customer records right; evidence identical to the reference on all 50 (Jaccard 1.00).
+>   22/50 reason texts equal the reference word for word: the added context sentence is the usual difference, by design.
+> - **Fixed:** one-sentence reasons (H-AC1114, H-BD709E now have two and three sentences); H-2B5507 now prints each of the three
+>   candidates' own DOB comparison; temporal prose no longer prints an age of 0 (0 occurrences in the dev output).
+> - **Kept on purpose:** clears cite the evidence for every contradiction they list, not only the chosen code (H-5EEC5A still cites
+>   KYC-30794E). The references do the same; citing only the chosen code lowered practice evidence agreement from 1.00 to 0.96.
+> - **Fixed since:** H-0F3C96 now quotes the cleared candidate's own fact; H-8A1D28 now says the hit gives no date of birth
+>   (see [REASON_HONESTY.md](REASON_HONESTY.md), which also lists the one wording gap still open).
 
 Baseline: origin/bot/core-system at a22cbf5, 819 rebuilt predictions. Rebased and rechecked on 2026-11-21. All 50 practice labels plus 10 deterministic supplements (first missing code, then earliest remaining hits in output order): 60 total, all three decisions and all 11 codes. References are guidance, not proof that every extra citation is wrong. No unseen accuracy claims.
 

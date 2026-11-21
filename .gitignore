@@ -6,7 +6,7 @@ venv/
 .env
 .env.*
 !.env.example
-dev/
+dev
 data/
 xlsx_raw/
 track1_zip_unrelated/

@@ -4,10 +4,9 @@ One person's facts from all their records: names, declared and verified DOB, ver
 Verified beats declared: the most recent APPROVED identity check (KYC provider or onboarding note) wins."""
 import re
 from data import as_text
-from textutil import parse_date, find_dates, fold, entity_kind, placeholder_dob
+from textutil import parse_date, parse_dob, day_month_ambiguous, find_dates, fold, entity_kind, placeholder_dob, approved_result
 from countries import norm_country, countries_in_text, countries_in_value
 
-APPROVED = {"approved", "passed", "pass", "clear", "cleared", "verified", "success", "successful", "accepted"}
 _DOC_RE = re.compile(r"passport|national id|identity card|id card|identity document|driv(?:ing|er'?s?) licen[cs]e|residence permit|registry extract|"
                      r"company registry|registration certificate|certificate of incorporation|document|\bid\b", re.I)
 _VERIFY_RE = re.compile(r"verif|validat|confirm|approv|clear|vet|pass|check|screen|match|authenticat|onboard|kyc|identity", re.I)
@@ -20,6 +19,10 @@ _POS_RE = re.compile(r"\b(?:approved|passed|verified|cleared|successful(?:ly)?|a
 # the note is about someone else on the same email (families share emails): not identity evidence for this person
 _REL_RE = re.compile(r"\b(?:spouse|wife|husband|son|daughter|mother|father|partner|child|children|sibling|brother|sister|guardian|"
                      r"dependa?nt|minor|joint (?:account )?holder|on behalf of)\b", re.I)
+# a support note saying the date of birth on file is wrong: not an identity check, but the record DOB is then in doubt
+_DOB_DISPUTE_RE = re.compile(r"(?:date of birth|\bdob\b|d\.o\.b|birth ?date)[^.;]{0,60}?\b(?:typo|wrong|incorrect|mistake\w*|error|"
+                             r"mis-?typed|not (?:correct|right)|needs? (?:correcting|updating|to be (?:corrected|updated)))\b|"
+                             r"\b(?:typo|wrong|incorrect|mistake\w*|error|mis-?typed)\b[^.;]{0,40}?(?:date of birth|\bdob\b|d\.o\.b|birth ?date)", re.I)
 _LIVED_RE = re.compile(r"\b(?:lived|lives|living|resid\w*|based in|employed|works? in|worked in|relocat\w*|moved to)\b", re.I)
 _PARTICLES = {"da", "de", "del", "della", "di", "do", "dos", "das", "du", "van", "von", "der", "den", "ter", "bin", "ibn", "bint",
               "al", "el", "la", "le", "y", "e"}
@@ -56,7 +59,9 @@ _CAPS_STOP = {"DOB", "ID", "KYC", "UK", "US", "USA", "EU", "UAE", "AML", "PEP", 
 def parse_id_note(note):
     """Parse a free-text identity-verification note. Returns dict or None if it is not an identity check."""
     t = as_text(note.get("text"))
-    ch = as_text(note.get("channel")).lower()
+    ch = as_text(note.get("channel")).strip().lower()
+    # 'kyc', 'KYC ', 'identity', 'onboarding', 'id verification': all the identity-check channel
+    ch = "kyc" if re.search(r"kyc|identity|onboard|verif|\bidv?\b", ch) else ch
     if not t:
         return None
     is_id = (ch == "kyc" and (_DOC_RE.search(t) or _VERIFY_RE.search(t))) or (_DOC_RE.search(t) and _VERIFY_RE.search(t) and _BIRTH_RE.search(t))
@@ -131,8 +136,11 @@ def parse_id_note(note):
             continue
         if births and dist > 60:
             continue          # with a birth keyword present, a full date far from it is some other date
-        cand.append((dist, -s, d))
-    dob = sorted(cand)[0][2] if cand else None
+        cand.append((dist, -s, d, e))
+    best = sorted(cand)[0] if cand else None
+    raw_dob = best[2] if best else None
+    dob = raw_dob
+    dob_ambiguous = bool(best) and day_month_ambiguous(t[-best[1]:best[3]])   # '03/04/1980': 3 April or 4 March
     # check date
     check_date = created
     if not check_date:
@@ -144,7 +152,7 @@ def parse_id_note(note):
     t2 = t if not name_span else t[:name_span[0]] + " " + t[name_span[1]:]
     ctry = countries_in_text(t2)
     return {"id": as_text(note.get("note_id")), "name": name, "dob": dob, "country": ctry[0] if ctry else None, "countries": ctry,
-            "date": check_date, "approved": approved, "ambiguous": ambiguous, "source": "note", "title_runs": title_runs}
+            "date": check_date, "dob_ambiguous": dob_ambiguous, "approved": approved, "ambiguous": ambiguous, "source": "note", "title_runs": title_runs}
 
 
 class Profile:
@@ -170,10 +178,13 @@ class Profile:
                     self.record_names.append((v, r))
         # declared DOBs
         self.declared_dobs = []
+        self.dm_ambiguous = set()     # (date, source) read day first whose day and month could be swapped
         for r in self.records:
-            d = parse_date(C[r].get("dob"))
+            d, amb = parse_dob(C[r].get("dob"))
             if d and not placeholder_dob(d):
                 self.declared_dobs.append((d, r))
+                if amb:
+                    self.dm_ambiguous.add((d, r))
         # countries with provenance
         self.countries = {}
 
@@ -181,6 +192,7 @@ class Profile:
             if c:
                 self.countries.setdefault(c, set()).add(src)
         self.unplaced = []      # residence / nationality values we cannot place: never evidence of a different country
+        self.unplaced_src = []  # the record or note ID holding each unplaced value
         for r in self.records:
             for f in ("residence_country", "nationality"):
                 # 'Russia, Cyprus', 'Russian/Cypriot', 'ru', 'Korea, Republic of': every country the value names
@@ -189,15 +201,18 @@ class Profile:
                     add(c, r)
                 if not ok:
                     self.unplaced.append(as_text(C[r].get(f)))
+                    self.unplaced_src.append(r)
         # identity checks
         checks = []
         for r in self.records:
             for k in idx.kyc_checks_for(r):
                 checks.append({"id": as_text(k.get("check_id")), "name": strip_titles(as_text(k.get("verified_name"))) or None,
-                               "dob": None if placeholder_dob(parse_date(k.get("verified_dob"))) else parse_date(k.get("verified_dob")), "country": norm_country(k.get("document_country"), codes_any_case=True),
+                               "dob": None if placeholder_dob(parse_dob(k.get("verified_dob"))[0]) else parse_dob(k.get("verified_dob"))[0],
+                               "dob_ambiguous": parse_dob(k.get("verified_dob"))[1], "country": norm_country(k.get("document_country"), codes_any_case=True),
                                "date": parse_date(k.get("checked_at")),
-                               "approved": as_text(k.get("result")).lower() in APPROVED, "source": "kyc"})
+                               "approved": approved_result(as_text(k.get("result"))), "source": "kyc"})
         self.residence_notes = []
+        self.dob_disputed = []  # non-identity notes saying the record date of birth is wrong
         seen_notes = set()
         for r in self.records:
             for n in idx.notes_by_email.get(as_text(C[r].get("email")).lower(), []):
@@ -210,11 +225,14 @@ class Profile:
                     p["name"] = strip_titles(p["name"])
                     checks.append(p)
                     continue
+                if _DOB_DISPUTE_RE.search(as_text(n.get("text"))):
+                    self.dob_disputed.append(nid)
                 found = countries_in_text(as_text(n.get("text")))
                 for c in found:
                     add(c, nid)
                     self.residence_notes.append((c, nid))
                 if not found and _LIVED_RE.search(as_text(n.get("text"))) and "address on file" not in as_text(n.get("text")).lower():
+                    self.unplaced_src.append(nid)
                     self.unplaced.append(nid)     # says where they lived or worked, but names no country we know
         # a note with both an approval and a negative word is ambiguous: it never supplies clearing facts, but
         # screen.py re-decides with it counted as approved, and if that stops the clear the hit goes to REVIEW
@@ -248,6 +266,8 @@ class Profile:
         self.verified_name = next(((c["name"], c["id"]) for c in approved if c["name"] and plausible(c)), None)
         self.verified_name_weak = bool(next((c.get("weak_name") for c in approved if c["name"] and plausible(c)), False))
         self.verified_dob = next(((c["dob"], c["id"]) for c in approved if c["dob"]), None)
+        if self.verified_dob and next(c.get("dob_ambiguous") for c in approved if c["dob"]):
+            self.dm_ambiguous.add(self.verified_dob)
 
     def best_country_sources(self, c):
         """Minimal citation for a country: the latest approved identity check, else system-of-record records, else notes."""
