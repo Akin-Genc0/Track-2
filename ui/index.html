@@ -54,17 +54,24 @@
   <div class="shell">
     <aside class="rail">
       <div class="search-wrap">
-        <input type="search" id="q" placeholder="Search name, hit, alert, ID…" autocomplete="off" />
+        <input type="search" id="q" placeholder="Search name, ID, reason code…" aria-label="Search hits" autocomplete="off" />
+        <kbd class="search-kbd" aria-hidden="true">/</kbd>
       </div>
       <div class="filters" id="filters"></div>
-      <div class="queue-meta" id="queue-meta"></div>
-      <div class="queue" id="queue" role="listbox" aria-label="Hit queue"></div>
+      <div class="queue-meta" id="queue-meta" aria-live="polite"></div>
+      <div class="queue" id="queue" role="listbox" aria-label="Hit queue" tabindex="0"></div>
+      <div class="keys" aria-label="Keyboard shortcuts">
+        <span><kbd>J</kbd><kbd>K</kbd> move</span>
+        <span><kbd>1</kbd>–<kbd>4</kbd> filter</span>
+        <span><kbd>/</kbd> search</span>
+        <span><kbd>?</kbd> all keys</span>
+      </div>
     </aside>
 
     <main class="stage" id="stage">
       <div class="empty" id="empty">
         <div class="empty-title">Select a hit</div>
-        <div class="empty-sub">Use the queue, or press <kbd>J</kbd> / <kbd>K</kbd> to move.</div>
+        <div class="empty-sub">Pick one from the queue, or press <kbd>J</kbd> / <kbd>K</kbd>.</div>
       </div>
     </main>
   </div>
@@ -73,11 +80,11 @@
     <div class="help-card">
       <h2>Keyboard</h2>
       <dl>
-        <div><dt><kbd>J</kbd> / <kbd>K</kbd></dt><dd>Next / previous hit</dd></div>
-        <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></dt><dd>Filter: all, cleared, true match, review</dd></div>
+        <div><dt><kbd>J</kbd> / <kbd>K</kbd></dt><dd>Next / previous hit (arrow keys too, while the queue has focus)</dd></div>
+        <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></dt><dd>Filter: all, same, different, review</dd></div>
         <div><dt><kbd>L</kbd></dt><dd>Practice-labeled only</dd></div>
         <div><dt><kbd>D</kbd></dt><dd>Disagreements with labels</dd></div>
-        <div><dt><kbd>/</kbd></dt><dd>Focus search</dd></div>
+        <div><dt><kbd>/</kbd></dt><dd>Search; <kbd>Enter</kbd> returns to the queue</dd></div>
         <div><dt><kbd>?</kbd></dt><dd>Toggle this help</dd></div>
         <div><dt><kbd>Esc</kbd></dt><dd>Close help / clear search</dd></div>
       </dl>
