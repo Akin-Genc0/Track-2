@@ -1,7 +1,7 @@
 # Clearsight: spot check of the hardened dev output
 
 > **Historical spot check, taken at 45ddc8c (465 clears / 229 reviews).** Re-checked on the final tree (464 / 125 / 230, output
-> byte-identical to main c0b44f5): all 30 sampled hits keep the decision described here (20 clears, 10 reviews). The three
+> byte-identical to main c7fd5d3): all 30 sampled hits keep the decision described here (20 clears, 10 reviews). The three
 > verified-name clears it flags are discussed under "Shared-account KYC checks" in [system/README.md](system/README.md): the
 > `DOUBTFUL_LINK_REVIEW` switch that would send them to review stays off because the practice labels clear the same pattern.
 

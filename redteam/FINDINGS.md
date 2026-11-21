@@ -4,7 +4,7 @@
 python3 redteam/run_all.py            # 48 synthetic cases; checks each one still behaves as recorded
 python3 redteam/run_all.py --strict   # checks each case gives a decision the policy allows (2 fail, both F12)
 ```
-**Current status (final tree, `python3 redteam/run_all.py --strict` re-run; dev output byte-identical to main c0b44f5):**
+**Current status (final tree, `python3 redteam/run_all.py --strict` re-run; dev output byte-identical to main c7fd5d3):**
 46 of 48 cases give a decision the policy allows: 34 FIXED, 12 HOLDS, 2 VULNERABLE. The 2 failures are both F12, the two
 judgement calls left to the team (a support note calling the record DOB a typo, and a customer day/month swap); the policy
 clears both literally. F1–F11 are fixed in system code. The default run prints FIXED for those cases on purpose; use `--strict`

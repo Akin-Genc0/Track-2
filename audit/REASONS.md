@@ -1,6 +1,6 @@
 # Reason-quality audit
 
-> **Current status (re-checked on the final tree, `output/dev.jsonl` byte-identical to main c0b44f5).** Everything below this box is the
+> **Current status (re-checked on the final tree, `output/dev.jsonl` byte-identical to main c7fd5d3).** Everything below this box is the
 > historical audit taken at a22cbf5, before the renderer was wired in; read it as the record of what was found, not as open defects.
 >
 > - The renderer it proposed is integrated as `system/explain.py` ("Integration (not applied)" below is history). `tools/check_submission.py`

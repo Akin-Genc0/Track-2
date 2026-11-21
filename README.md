@@ -61,7 +61,7 @@ On the full dev set the system takes 589 of 819 hits (72%) off the analyst queue
 > **Residual risk: what a perfect practice score does not prove**
 >
 > - **50 labels is a small sample.** 50/50 is a sanity check, not an accuracy estimate for the unseen set.
-> - **Single-signal clears.** Counted from the reason codes in `output/dev.jsonl`: **216 of the 464 clears rest on location alone** (`LOCATION_MISMATCH` is the lowest-priority ground, so it is the code only when no other contradiction exists), and **79 rest on a verified name alone** (`NAME_MISMATCH_VERIFIED` with no country contradiction). Both follow the policy literally; some, such as bank branches abroad or names sharing a single part, deserve sampled QA. Examples are listed in [system/README.md](system/README.md#honest-limitations).
+> - **Single-signal clears.** Counted from the reason codes in `output/dev.jsonl`: **217 of the 464 clears rest on location alone** (`LOCATION_MISMATCH` is the lowest-priority ground, so it is the code only when no other contradiction exists), and **79 rest on a verified name alone** (`NAME_MISMATCH_VERIFIED` with no country contradiction). Both follow the policy literally; some, such as bank branches abroad or names sharing a single part, deserve sampled QA. Examples are listed in [system/README.md](system/README.md#honest-limitations).
 > - **Q: Why is `DOUBTFUL_LINK_REVIEW` off?** A: The practice labels clear exactly the pattern it would send to review (a verified name that differs from the record name on the customer’s own check); switched on, it moves 60 dev clears to review and practice falls to 46/50 (score 0.889, measured above).
 
 ## 30-second quickstart
@@ -78,8 +78,9 @@ make test                                       # data-free policy, loader and p
 `make test` runs these, which you can also run directly:
 
 ```sh
-python3 tests/test_policy.py          # 24 synthetic rare-situation policy cases
+python3 tests/test_policy.py          # 25 synthetic rare-situation policy cases
 python3 tests/test_ages.py
+python3 tests/test_textutil.py
 python3 tests/test_loader.py
 python3 tests/test_runner_boundary.py
 python3 tests/test_real_format.py
