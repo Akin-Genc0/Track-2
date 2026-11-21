@@ -8,6 +8,11 @@ from explain import explain
 DECIDES = {"ENTITY_TYPE_MISMATCH": "the type difference", "DECEASED": "the date of death", "TEMPORAL_IMPOSSIBILITY": "the timing",
            "DOB_MISMATCH": "the date-of-birth contradiction", "NAME_MISMATCH_VERIFIED": "the verified legal name",
            "LOCATION_MISMATCH": "the country difference"}
+# Team call, off by default: when the customer's own record name agrees with the hit and the approved check's verified
+# name shares only a part (a surname) with that record, the check may be a relative's on a shared account. On, such a hit
+# is not cleared on the verified name (or on facts from that check alone) and goes to REVIEW. The practice labels clear
+# this pattern (H-2808BE, H-EDBB79, H-380854), so turning it on costs 3 practice decisions.
+DOUBTFUL_LINK_REVIEW = False
 CLEAR_PRIORITY = ["ENTITY_TYPE_MISMATCH", "DECEASED", "TEMPORAL_IMPOSSIBILITY", "DOB_MISMATCH", "NAME_MISMATCH_VERIFIED", "LOCATION_MISMATCH"]
 
 
@@ -79,6 +84,18 @@ class Decider:
                 if (comp or len(cp) >= 2) and self.m.agree_parts(cp, hp):
                     return True, True, hn, cname, [src]
         return False, usable, None, None, []
+
+    def doubtful_link(self, prof, hit):
+        """The record name agrees with the hit, and the verified name agrees with no record name but shares a part with one."""
+        comp = prof.company
+        vp = self.m.parts(prof.verified_name[0], comp)
+        recs = [self.m.parts(n, comp) for n, _ in prof.record_names]
+        hits = [self.m.parts(n, hit.company or comp) for n in hit.names]
+        if not any(self.m.agree_parts(rp, hp) for rp in recs for hp in hits if rp and hp):
+            return False
+        if any(self.m.agree_parts(vp, rp) for rp in recs if rp):
+            return False
+        return any(self.m.part_match(a, b) for rp in recs for a in vp for b in rp)
 
     def decide_person(self, prof, hit, alert):
         screened = alert.get("screened_at")
@@ -153,6 +170,16 @@ class Decider:
                 ev = sorted({s for c in cust_c for s in prof.countries[c]})
                 contra["LOCATION_MISMATCH"] = (
                     f"The customer is linked only to {', '.join(sorted(cust_c))} but the hit is linked only to {', '.join(sorted(hit_c))}.", ev)
+
+        if DOUBTFUL_LINK_REVIEW and "NAME_MISMATCH_VERIFIED" in contra and self.doubtful_link(prof, hit):
+            vname, vsrc = prof.verified_name
+            for c in [c for c, (_, ev) in contra.items() if c == "NAME_MISMATCH_VERIFIED" or (ev and set(ev) <= {vsrc})]:
+                del contra[c]
+            if not contra:
+                return dict(explain({"sentences": [
+                    f"The approved check {vsrc} gives the verified name {vname}, which shares only part of the name with the customer's own record, while the record name agrees with the hit's name {hit.name}.",
+                    "The check may belong to a relative on a shared account, so it is not used to clear the hit and a person must confirm whose check it is."],
+                    "evidence": [vsrc, prof.primary]}), decision="REVIEW", reason_code="INSUFFICIENT_DATA")
 
         def compared(code):
             """What else was compared, for a reason whose deciding fact fits in one sentence."""
