@@ -5,7 +5,7 @@ Verified beats declared: the most recent APPROVED identity check (KYC provider o
 import re
 from data import as_text
 from textutil import parse_date, find_dates, fold
-from countries import norm_country, countries_in_text
+from countries import norm_country, countries_in_text, countries_in_value
 
 APPROVED = {"approved", "passed", "pass", "clear", "cleared", "verified", "success", "successful", "accepted"}
 _DOC_RE = re.compile(r"passport|national id|identity card|id card|identity document|driv(?:ing|er'?s?) licen[cs]e|residence permit|registry extract|"
@@ -141,7 +141,7 @@ def parse_id_note(note):
     # document country (outside the name span)
     t2 = t if not name_span else t[:name_span[0]] + " " + t[name_span[1]:]
     ctry = countries_in_text(t2)
-    return {"id": as_text(note.get("note_id")), "name": name, "dob": dob, "country": ctry[0] if ctry else None,
+    return {"id": as_text(note.get("note_id")), "name": name, "dob": dob, "country": ctry[0] if ctry else None, "countries": ctry,
             "date": check_date, "approved": approved, "ambiguous": ambiguous, "source": "note", "title_runs": title_runs}
 
 
@@ -177,15 +177,21 @@ class Profile:
         def add(c, src):
             if c:
                 self.countries.setdefault(c, set()).add(src)
+        self.unplaced = []      # residence / nationality values we cannot place: never evidence of a different country
         for r in self.records:
-            add(norm_country(C[r].get("residence_country")), r)
-            add(norm_country(C[r].get("nationality")), r)
+            for f in ("residence_country", "nationality"):
+                # 'Russia, Cyprus', 'Russian/Cypriot', 'ru', 'Korea, Republic of': every country the value names
+                cs, ok = countries_in_value(C[r].get(f))
+                for c in cs:
+                    add(c, r)
+                if not ok:
+                    self.unplaced.append(as_text(C[r].get(f)))
         # identity checks
         checks = []
         for r in self.records:
             for k in idx.kyc_checks_for(r):
                 checks.append({"id": as_text(k.get("check_id")), "name": strip_titles(as_text(k.get("verified_name"))) or None,
-                               "dob": parse_date(k.get("verified_dob")), "country": norm_country(k.get("document_country")),
+                               "dob": parse_date(k.get("verified_dob")), "country": norm_country(k.get("document_country"), codes_any_case=True),
                                "date": parse_date(k.get("checked_at")),
                                "approved": as_text(k.get("result")).lower() in APPROVED, "source": "kyc"})
         self.residence_notes = []
@@ -209,7 +215,8 @@ class Profile:
         self.ambiguous = [c for c in checks if c.get("ambiguous")]
         approved = [c for c in checks if c["approved"] or (promote_ambiguous and c.get("ambiguous"))]
         for c in approved:
-            add(c["country"], c["id"])
+            for x in c.get("countries") or [c["country"]]:    # every country an approved note names (places they lived count)
+                add(x, c["id"])
         key = lambda c: ((c["date"] or (0, 0, 0))[0], (c["date"] or (0, 0, 0))[1] or 0, (c["date"] or (0, 0, 0))[2] or 0, c["id"])
         approved.sort(key=key, reverse=True)
         self.checks = approved

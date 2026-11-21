@@ -4,7 +4,7 @@ profile notes, else qualifying web search results), earliest dated report, date 
 import re
 from data import as_text, as_list, as_dict_list
 from textutil import parse_date, find_dates, fold, name_parts
-from countries import norm_country, countries_in_text
+from countries import norm_country, countries_in_text, _key, SUBNATIONAL, SUBNATIONAL_AMBIG, NOT_COUNTRIES
 
 LISTING_PHRASES = [
     ("sanction", "a sanctioned individual"),
@@ -119,6 +119,7 @@ class HitFacts:
         self.phrase = listing_phrase(hit.get("primary_category"), self.categories)
         # countries tied to the hit
         self.countries = []
+        self.unplaced = []      # place values we cannot tie to any country: never evidence of a different country
         for f in ("countries", "nationality", "citizenship", "addresses", "place_of_birth"):
             for item in as_dict_list(hit.get(f)):
                 if isinstance(item, dict):
@@ -128,12 +129,21 @@ class HitFacts:
                 v = re.sub(r"\[.*?\]", "", as_text(v)).strip()
                 if not v:
                     continue
-                c = norm_country(v.split(",")[-1]) or norm_country(v)
-                if not c:
-                    cs = countries_in_text(v)
-                    c = cs[-1] if cs else None
-                if c and c not in self.countries:
-                    self.countries.append(c)
+                last = _key(v.split(",")[-1])
+                if f in ("addresses", "place_of_birth") and (last in SUBNATIONAL or last in SUBNATIONAL_AMBIG):
+                    # 'Atlanta, Georgia' / 'Newark, New Jersey': a US state or Canadian province (Georgia: state or country)
+                    cs = list(SUBNATIONAL_AMBIG.get(last) or [SUBNATIONAL[last]])
+                else:
+                    c = norm_country(v.split(",")[-1]) or norm_country(v)
+                    if not c:
+                        cs = countries_in_text(v)
+                        c = cs[-1] if cs else None
+                    cs = [c] if c else []
+                if not cs and _key(v) not in NOT_COUNTRIES:
+                    self.unplaced.append(v)
+                for c in cs:
+                    if c not in self.countries:
+                        self.countries.append(c)
         # birth dates the hit gives: list of dicts {years:set, m, d, src, text}
         self.dob_source = None
         self.dobs = []

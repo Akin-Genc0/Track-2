@@ -133,7 +133,7 @@ class Decider:
                     f"The customer's verified name is {vname} ({vsrc}), which does not match the hit's name {hit.name}.", [vsrc])
         # location
         shared = sorted(cust_c & hit_c)
-        if cust_c and hit_c and not shared:
+        if cust_c and hit_c and not shared and not hit.unplaced and not prof.unplaced:
             if not (n_agree and dob_agree):
                 ev = sorted({s for c in cust_c for s in prof.countries[c]})
                 contra["LOCATION_MISMATCH"] = (
