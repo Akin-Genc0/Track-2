@@ -23,8 +23,10 @@ _STRONG = [
     r"(?i)\baged? (\d{1,3})\b", r"(?i)\b(\d{1,3})[- ]years?[- ]old\b", r"(?i)\bage of (\d{1,3})\b", r"(?i)\b(\d{1,3}) years of age\b",
     r"(?i)\b(\d{1,3}) years old\b", r"(?i)\bage:? ?(\d{1,3})\b", r"(?i)\(aged? (\d{1,3})\)", r"(?i)\b(\d{1,3}) yrs? old\b",
     r"(?i)\b(\d{1,3})-year-old\b",
-    r"(?i)\b(?:was|is|were|are|turned|reached|then|aged)\s+(\d{1,3})\b(?!\s*(?:%|percent|per\b|[a-z]*illion|thousand|times|counts?|charges?|people|persons|men|women|units?|of\b|out\b|years? (?:in|prison|sentence|jail|imprisonment)|months?|days?|weeks?|hours?|minutes?|am\b|pm\b|a\.m|p\.m|o.clock|(?-i:[A-Z$£€])))",
-    r"\b[Aa]t (\d{1,3})\b(?!\s*(?:%|percent|per\b|[a-z]*illion|thousand|times|counts?|charges?|people|persons|men|women|units?|of\b|out\b|years? (?:in|prison|sentence|jail|imprisonment)|months?|days?|weeks?|hours?|minutes?|am\b|pm\b|a\.m|p\.m|o.clock|(?-i:[A-Z$£€])))",
+    # a bare verb + number is an age only when the clause ends there or an age word follows ("was 45.", "was 45 when",
+    # "turned 45 in 2019"); "were 40 apartments" / "turned 3 companies" / "at 3 banks" are counts, not ages
+    r"(?i)\b(?:was|is|turned|reached|then|aged)\s+(\d{1,3})(?=\s*(?:[.,;:)!?]|$|\(|-|yrs?\b|years?\b|when\b|at the time\b|in (?:\w+ )?\d{4}\b|on \d|during\b))(?!\s*years? (?:in|prison|sentence|jail|imprisonment))",
+    r"(?i)\bat (?:the age of |age )?(\d{1,3})(?=\s*(?:years? old|yrs? old)\b|,|\s+(?:he|she|they)\b)",
 ]
 # Weak cues: a bare number next to a name ("Mark Mueller, 48, a sanctioned ..."). Only used for short search-result
 # snippets, and never when the number is part of a date.
@@ -39,6 +41,17 @@ _WEAK_RE = [re.compile(p) for p in _WEAK]
 _MONTH_BEFORE = re.compile(r"(?i)\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s*$")
 _BORN_RE = re.compile(r"\b(?:born|birth ?date|date of birth|d\.?o\.?b\.?|birthday)\b(?:\s+(?:is|was|of|on|in|during|around|circa|c\.|:|as|recorded as|listed as|given as))*:?", re.I)
 _REPORT_RE = re.compile(r"^\s*According to [^;\n]+;\s*([^:\n]{4,40}?)\s*:", re.M)
+
+
+def years_span(text):
+    """Every birth year one dobs item or 'born ...' clause names ('circa 1960-1965', '1960 to 1965', '1960, 1965',
+    '1960/61', '1974 or 1976'). Two or more distinct years -> the whole span min..max (no month/day), else None."""
+    ys = {d[0] for _, _, d in find_dates(text)}
+    for a, b in re.findall(r"\b(1[89]\d\d|20\d\d)/(\d{2})\b(?![/.-]\d)", text):
+        ys |= {int(a), int(a[:2] + b)}
+    if len(ys) < 2 or max(ys) - min(ys) > 15:
+        return None
+    return set(range(min(ys), max(ys) + 1))
 
 
 def listing_phrase(primary, categories):
@@ -64,7 +77,7 @@ def ages_in(text, weak=False):
             if re.match(r",? ?\d{4}\b|[/:]|[-.]\d", text[e0:e0 + 6]):
                 continue
             a = int(m.group(1))
-            if 1 <= a <= 120:
+            if 16 <= a <= 100:     # no adult watchlist profile states an age outside this; dropping only removes a clearing fact
                 out.append((m.start(), a))
     out.sort()
     res, last = [], -100
@@ -133,6 +146,10 @@ class HitFacts:
                         if 0 <= b - a <= 15:
                             self.dobs.append({"years": set(range(a, b + 1)), "m": None, "d": None, "src": None, "kind": "field", "text": part})
                         continue
+                    span = years_span(part)
+                    if span:
+                        self.dobs.append({"years": span, "m": None, "d": None, "src": None, "kind": "field", "text": part})
+                        continue
                     d = parse_date(part)
                     if d:
                         amb = re.search(r"\b(\d{1,2})[/.](\d{1,2})[/.]\d{2,4}\b", part)
@@ -154,6 +171,17 @@ class HitFacts:
                         amb = re.match(r"\s*(?:on |in )?(\d{1,2})[/.](\d{1,2})[/.]\d{2,4}", tail)
                         if amb and int(amb.group(1)) <= 12 and int(amb.group(2)) <= 12 and amb.group(1) != amb.group(2):
                             d = (d[0], None, None)
+                        # 'born 1974 or 1976' / 'born 1960-65': every year the clause chains with or/and/to/-
+                        end = ds[0][1]
+                        for s2, e2, _ in ds[1:]:
+                            if re.fullmatch(r"\s*(?:,|or|and|to|/|-|–)\s*(?:(?:about|around|circa|c\.)\s*)?", tail[end:s2]):
+                                end = e2
+                            else:
+                                break
+                        span = years_span(tail[:end]) if end != ds[0][1] else None
+                        if span:
+                            pdobs.append({"years": span, "m": None, "d": None, "src": None, "kind": "notes", "text": tail[:end]})
+                            continue
                         pdobs.append({"years": {d[0]}, "m": d[1], "d": d[2], "src": None, "kind": "notes", "text": tail[:ds[0][1]]})
                 if not _BORN_RE.search(sent):
                     for kind, ys, mm, dd, age, ref in years_from_age(sent):
