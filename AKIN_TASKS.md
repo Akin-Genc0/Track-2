@@ -17,19 +17,20 @@ system/run data/dev output/dev.jsonl
 python3 tools/score.py output/dev.jsonl data/dev/practice_labels.jsonl -v
 ```
 
-Current dev: 50/50 practice correct, 0 unsafe clearances, 26.5% review rate.
+Current dev on the audited build: 50/50 practice correct, 0 unsafe clearances on those labels, 229/819 sent to review (28.0%).
 Zain + Grok Bot are hardening `decide.py` / `hitfacts.py` for the unseen set — avoid editing those to prevent conflicts.
 
 ## 1. Submission + demo owner (highest priority)
 - [ ] Find the submission portal (/submit on the hackathon site) and confirm exactly what it needs (repo link, video, README path).
-- [ ] Record the demo video (≤3 min): problem → one SAME / one DIFFERENT / one REVIEW case → how evidence is cited → determinism → stats.
-- [ ] Write the 3-minute live pitch script for the Top 5 demo.
+- [x] Produce the portal demo (≤2 min): narrated Fathom captures, 1:39, `data/Clearsight-demo.mp4` on Akin's machine.
+- [ ] Upload the MP4 to an approved link-sharing host and test playback signed out. Enter the team roster and contact email on `/submit`.
+- [x] Prepare the separate three-minute Top 5 live script: [deck/PITCH.md](deck/PITCH.md).
 
 ## 2. Edge-case review (your judgement as a human analyst)
-- [ ] Open `output/dev.jsonl`, pick 20 DIFFERENT_ENTITY decisions at random and check each against the data. Any that look unsafe (could actually be the customer) → note the hit_id in `REVIEW_NOTES.md`.
-- [ ] Do the same for 10 REVIEW decisions — could any be safely decided?
+- [x] Check 20 sampled clearances against the data; priority cases and sampling method in [REVIEW_NOTES.md](REVIEW_NOTES.md).
+- [x] Check 10 sampled reviews: insufficient evidence to change any of the ten.
 
 ## 3. README polish
-- [ ] Read `system/README.md` as a judge would (Google sanctions, Checkout, Visa, AmEx, UBS). Tighten wording, make sure the architecture section answers: how people are resolved on both sides, how evidence is represented, how it stays deterministic, what it's honest about missing.
+- [x] Tighten the [system README](system/README.md) for judges and link the audit alongside the practice metrics.
 
 Commit on `akin/work` and push; ping Zain when done.

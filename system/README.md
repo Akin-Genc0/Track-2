@@ -3,40 +3,16 @@
 ```
 system/run <data folder> <output file>       # e.g.  system/run dev output/dev.jsonl
 ```
-Python 3 standard library only. No network, no language model, no API key. A full dev run (819 hits, 72k customer records) takes about 6 s on one core and costs nothing.
+One JSON line per watchlist hit: a decision, policy reason code, resolved customer ID, explanation and evidence IDs. The resolver uses Python's standard library; there is no model, prompt, API key or network dependency. The 819-hit dev run takes about six seconds on one core with no API cost.
 
 ## Architecture
 
-```
-alerts.jsonl ─┐
-              ▼
- (1) resolve.py   CUSTOMER RESOLUTION
-     follow the alert link: account_ref → accounts (joint holders) | login_handle → accounts | email → customers
-     no link → search customers by screened name (name-part index + variants), DOB, country, city
-     several linked records → the screened details choose between them
-     group records into PEOPLE with union-find: same phone + same full DOB, or same document number on approved KYC checks
-              │  1..n people
-              ▼
- (2) profile.py   CUSTOMER PROFILE (one per person; every fact keeps its source record IDs)
-     record names, declared DOBs, residence and nationality (CUS-…)
-     KYC provider checks via accounts → onboarding → applicant (KYC-…); onboarding-team write-ups parsed from notes (NOTE-…)
-     verified beats declared: the most recent APPROVED check gives legal name, DOB and document country; rejected or expired checks are ignored
-     other notes add places the customer lived (NOTE-…)
-              │
- hits.jsonl ──┤
-              ▼
- (3) hitfacts.py  HIT FACTS
-     names and aliases, entity type, countries (countries, nationality, citizenship, last part of each address, place of birth;
-     "International"/"Europe" dropped), possible birth dates: dobs field → first paragraph of profile notes ("born …",
-     "aged 45 in March 2019" → 1973/1974) → only if neither gives one, search results whose query is the hit's name AND that use
-     the hit's listing phrase AND name a hit country (SR-…). Earliest "According to …; <date>:" report, date of death.
-              ▼
- (4) decide.py    POLICY RULES  →  decision, reason_code, customer_record_id, reason, evidence
-     clear only on a contradiction: ENTITY_TYPE > DECEASED > TEMPORAL (<16 at earliest report) > DOB (every hit date contradicted,
-     ±1 year tolerance) > NAME_MISMATCH_VERIFIED (verified legal name only) > LOCATION (no shared country, and not when name+DOB agree)
-     confirm only on agreement: person = name + DOB agree; company = name + country agree
-     otherwise REVIEW / INSUFFICIENT_DATA; several people fit and disagree → REVIEW / AMBIGUOUS_CUSTOMER_RECORD
-```
+| Analyst question | How the resolver answers it |
+|---|---|
+| Which customer was screened? (`resolve.py`) | Follow the account, login or email link first. Screened details distinguish joint holders. Without a link, compare name, DOB, country and city. Group records only on phone **and** full DOB, or a shared document number on approved checks. Keep distinct plausible people separate. |
+| What do we know about each candidate? (`profile.py`) | Follow accounts through onboarding to the KYC applicant, and email to support notes. The latest approved identity check supplies legal name, DOB and document country. Reject expired or failed checks; retain the source IDs behind each fact, including former residence. |
+| Which facts belong to the listed entity? (`hitfacts.py`) | Read the hit's name and aliases, entity type, countries, reports and death date. For DOB, try structured dates, then profile text. A dated age yields two possible birth years. Only use a fallback search result when the query, listing context and country tie it to this hit. |
+| Does the evidence settle identity? (`decide.py`) | Clear on a policy contradiction; confirm a person on name and DOB, or a company on name and country, with no contradiction. Matching name and DOB with disjoint countries goes to review. If plausible customers lead to different decisions, return `REVIEW / AMBIGUOUS_CUSTOMER_RECORD`. |
 `screen.py` is the entry point. `textutil.py` handles dates (ISO, day-first D/M/Y, "17 June 1976", "June 17, 1976", month-year, year) and names. `countries.py` is an embedded gazetteer: names, ISO2 and ISO3 codes, demonyms ("Nigerian" → Nigeria) and aliases. Territories count as their own country.
 
 **Name matching (principle 8).** Text is case-folded and accent-folded (ł, ø, ß included). Anything in brackets and all punctuation are dropped. Single letters (initials), placeholders (NA, N/A, TEST, UNKNOWN, XXX, NONE, any token with digits) and, for companies, legal forms are removed, and each part counts once. Two parts match when they are identical, sit in the same `name_variants.json` group, are written together or apart (Abdulsalam = Abdul Salam, counted as one match covering both), or are close in spelling: 1 edit for parts of 4–6 letters, 2 edits for longer parts (Levenshtein on the shorter part's length). Parts under 4 letters must be identical. Names agree when the best disjoint matching has 2 or more matches, or covers every part of the shorter name. An individual whose names have fewer than 2 real parts can be neither confirmed nor cleared on name.
@@ -56,6 +32,7 @@ There is no randomness, no model, no network and no clock. Every input is sorted
 ## Results on the development set
 - 50 practice labels: 50/50 decisions correct, 0 unsafe clearances, local decision score 1.000. Reason code fits 50/50, customer record right 50/50, evidence identical to the reference on all 50.
 - All 819 dev hits: 465 DIFFERENT_ENTITY (56.8%), 125 SAME_ENTITY, 229 REVIEW (28.0% review rate). The same run with any `PYTHONHASHSEED` gives byte-identical output.
+- [Spot check of 20 clears and 10 reviews](../REVIEW_NOTES.md): three clears warrant checking the link between the screened holder and the approved identity check. The practice score does not measure this risk across the unlabelled set.
 
 ## Hardening for the unseen set
 **Policy coverage.** `tests/test_policy.py` has 23 synthetic data rooms, one per rare situation, and all pass:
