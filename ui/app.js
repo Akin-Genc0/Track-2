@@ -9,8 +9,8 @@
   };
 
   const DECISION_LABEL = {
-    DIFFERENT_ENTITY: "Cleared",
-    SAME_ENTITY: "True match",
+    DIFFERENT_ENTITY: "Different entity",
+    SAME_ENTITY: "Same entity",
     REVIEW: "Review",
   };
   const DECISION_CLASS = {
@@ -478,9 +478,9 @@
       : "Share of the review-everything cost saved on the practice labels (an unsafe clear costs 60)";
     $("stats").replaceChildren(
       kpi("k-total", "Hits reviewed", nf.format(c.total - c.pending), c.pending ? `${c.pending} still pending` : `Across ${nf.format(Object.keys(bundle.alerts || {}).length)} alerts`),
-      kpi("k-same", "True match", nf.format(c.SAME_ENTITY), "Sent to compliance", share(c.SAME_ENTITY)),
-      kpi("k-review", "Needs review", nf.format(c.REVIEW), "Routed to an analyst", share(c.REVIEW)),
-      kpi("k-diff", "Cleared", nf.format(c.DIFFERENT_ENTITY), "False positives closed", share(c.DIFFERENT_ENTITY)),
+      kpi("k-same", "Same entity", nf.format(c.SAME_ENTITY), "Sent to compliance", share(c.SAME_ENTITY)),
+      kpi("k-review", "Review", nf.format(c.REVIEW), "Routed to an analyst", share(c.REVIEW)),
+      kpi("k-diff", "Different entity", nf.format(c.DIFFERENT_ENTITY), "False positives closed", share(c.DIFFERENT_ENTITY)),
       el("div", { class: "kpi k-score", title: scoreTitle },
         el("div", null,
           el("div", { class: "kpi-top" }, el("span", { class: "kpi-label" }, "Practice check")),
@@ -522,9 +522,9 @@
     const groups = [
       ["Decisions", [
         ["ALL", "All hits", "all", s.counts.total],
-        ["SAME_ENTITY", "True match", "same", s.counts.SAME_ENTITY],
-        ["REVIEW", "Needs review", "review", s.counts.REVIEW],
-        ["DIFFERENT_ENTITY", "Cleared", "diff", s.counts.DIFFERENT_ENTITY],
+        ["SAME_ENTITY", "Same entity", "same", s.counts.SAME_ENTITY],
+        ["REVIEW", "Review", "review", s.counts.REVIEW],
+        ["DIFFERENT_ENTITY", "Different entity", "diff", s.counts.DIFFERENT_ENTITY],
         ...(s.counts.pending ? [["PENDING", "Pending", "pending", s.counts.pending]] : []),
       ]],
       ["Practice set", [
