@@ -2,30 +2,102 @@
 
 **Clear the noise. Never clear a match.** Team Clearsight’s Track 2 sanctions-screening hackathon entry resolves customer records, compares watchlist evidence, and produces deterministic, cited decisions for analyst review. It runs locally with the Python standard library: no model, API key, or network access is needed. The slogan is our aim, not a guarantee; policy assumptions and parser limitations are documented in the [required system README](system/README.md).
 
+| ![Fathom analyst desk: H-582410 Elvira Velasco Morillo confirmed as a true match](ui/screenshots/01-same-entity-elvira.png) | ![H-13E1CF cleared on temporal impossibility](ui/screenshots/03-cleared-temporal.png) | ![H-0F3C96 left for review: three customers fit and lead to different decisions](ui/screenshots/05-ambiguous-review.png) |
+| --- | --- | --- |
+| **True match.** H-582410: name, DOB and Spain agree; every fact cites its record (NOTE-14E25A, CUS-377745). | **Cleared.** H-13E1CF: the customer was born in 2007, so was at most 12 at the hit’s 2020 report. | **Review.** H-0F3C96: three customers fit the alert and lead to different decisions, so a person decides. |
+
+*Screenshots of the analyst desk (`ui/`), captured on an earlier run whose header shows 465 / 125 / 229; the current run gives 464 / 125 / 230 and the same decisions for these three hits.*
+
+## Judges start here
+
+| Read | What it gives you |
+| --- | --- |
+| [system/README.md](system/README.md) | The required deliverable: architecture, policy choices, evidence, three worked cases, honest limitations |
+| [Judges' metrics](system/README.md#how-we-score-on-the-judges-metrics) and [Judge Q&A](system/README.md#judge-qa) | Measured unsafe clearances, clearance precision, same-entity recall and review rate on practice and shadow sets; short answers with file and function names |
+| [deck/index.html](deck/index.html) | The pitch deck (open in a browser) |
+| [deck/DEMO_SCRIPT_3MIN.md](deck/DEMO_SCRIPT_3MIN.md) | The timed 3-minute live demo script |
+| [ui/screenshots/](ui/screenshots/) | All six analyst-desk screenshots |
+| [output/dev.jsonl](output/dev.jsonl) | Our 819 submitted decisions |
+
+**Proof points** (fresh run of `system/run` on the official `dev/` folder, scored with the organisers’ `validate.py`):
+
+- **50/50 right decisions on the official practice labels, 0 unsafe clearances**; decision score 100.0, reason code and customer record right on all 50.
+- **All 819 dev hits decided:** 464 clear (`DIFFERENT_ENTITY`) · 125 confirm (`SAME_ENTITY`) · 230 review (`REVIEW`), a 28% review rate. Output validity: 819 lines, 0 problems.
+- **Python standard library only:** no model, no API key, no network, $0 per run, about 16 s for 819 hits on one laptop core.
+- **Synthetic shadow sets** (559 hits each, seeds 7 and 21, formats dev never shows): score 0.965, 547/559 right, **0 unsafe**.
+- **No rewording moves a decision towards clearing:** `tools/perturb.py` rewrites names, dates, ages and countries across the data room; every change it causes moves towards `REVIEW`.
+- **Deterministic:** byte-identical output across runs and any `PYTHONHASHSEED`; 5 fresh-clone runs with different seeds give the same bytes.
+- **Robustness under perturbation** (external test, 8 perturbed copies of dev): stripping accents, swapping name order, upper-casing hit, customer and KYC names, and rewriting ISO DOBs as "24 August 1994" changed **0 of 819** decisions. Deleting one letter in long name parts moved 19 decisions, 18 of them towards `REVIEW`; the one move to a clear is being fixed.
+
+Practice and shadow scores are development feedback, not proof of unseen-set performance.
+
+### Measured baseline: what the system saves over reviewing everything
+
+Cost model from the brief, as implemented in [tools/score.py](tools/score.py): an unsafe clearance costs 60, a needless review 2–3. Each row is a real file scored with `python3 tools/score.py <predictions> dev/practice_labels.jsonl` on the 50 practice labels (10 REVIEW, 28 DIFFERENT_ENTITY, 12 SAME_ENTITY).
+
+| Strategy on the 50 practice labels | Right | Unsafe clears | Cost | Score (1 − cost / review-all cost) |
+| --- | --- | --- | --- | --- |
+| Review every hit (the manual baseline) | 10 | 0 | 108 | 0.000 |
+| Clear every hit | 28 | **22** | 1320 | 0.000 |
+| Confirm every hit | 12 | 0 | 104 | 0.037 |
+| Clearsight with `DOUBTFUL_LINK_REVIEW` on (see below) | 46 | 0 | 12 | 0.889 |
+| **Clearsight as submitted** | **50** | **0** | **0** | **1.000** |
+
+On the full dev set the system takes 589 of 819 hits (72%) off the analyst queue, each with a cited reason.
+
+### Worked example: H-582410 → SAME_ENTITY
+
+**Input.** Alert A-145983 screened “Elvira Velasco MORILLO”, DOB 1968-03-05, account ACC-C4CA34. The watchlist hit H-582410 is a Spanish PEP, “Elvira Velasco Morillo” (alias “Elvira Velazco Morillo”), with no `dobs` field; its profile notes say “November 1998 saw Elvira Velasco Morillo, a 30-year-old, face charges”, and its countries are Spain.
+
+**What the system does.** ACC-C4CA34 is a joint account; the screened name and DOB pick customer CUS-377745. Her latest approved identity check, onboarding note NOTE-14E25A, verifies DOB 1968-03-05. “30 years old in November 1998” gives the hit a birth year of 1967 or 1968, so the dates agree; Spain is shared through the customer record; the names agree.
+
+**Output** (the exact line in [output/dev.jsonl](output/dev.jsonl), which matches the practice label):
+
+```json
+{"hit_id": "H-582410", "alert_id": "A-145983", "decision": "SAME_ENTITY", "reason_code": "NAME_DOB_LOCATION_MATCH",
+ "customer_record_id": "CUS-377745",
+ "reason": "The customer's date of birth 1968-03-05 (NOTE-14E25A) agrees with the hit's 1967 or 1968. Both the customer and the hit are linked to Spain. The customer's name agrees with the hit's name Elvira Velasco Morillo.",
+ "evidence": ["NOTE-14E25A", "CUS-377745"]}
+```
+
+> **Residual risk: what a perfect practice score does not prove**
+>
+> - **50 labels is a small sample.** 50/50 is a sanity check, not an accuracy estimate for the unseen set.
+> - **Single-signal clears.** Counted from the reason codes in `output/dev.jsonl`: **217 of the 464 clears rest on location alone** (`LOCATION_MISMATCH` is the lowest-priority ground, so it is the code only when no other contradiction exists), and **79 rest on a verified name alone** (`NAME_MISMATCH_VERIFIED` with no country contradiction). Both follow the policy literally; some, such as bank branches abroad or names sharing a single part, deserve sampled QA. Examples are listed in [system/README.md](system/README.md#honest-limitations).
+> - **Q: Why is `DOUBTFUL_LINK_REVIEW` off?** A: Policy principle 4 says verified beats declared: the approved check’s legal name outranks the record name, so a verified name that disagrees with the hit clears it. The practice labels read the policy the same way. A bank that wants to be stricter can flip one line in `decide.py`; that moves about 60 dev clears to review and adds no clears (practice then 46/50, score 0.889, measured above).
+
 ## 30-second quickstart
+
+Needs Python 3.11 or newer; nothing to install. Tested on Python 3.11 and 3.13.5.
 
 ```sh
 git clone https://github.com/Akin-Genc0/Track-2 && cd Track-2
-system/run /path/to/dev output/dev.jsonl        # ~15 s, Python 3 stdlib only, no key, no network
+system/run /path/to/dev output/dev.jsonl        # about 16 s, stdlib only, no key, no network
 python3 /path/to/validate.py --data /path/to/dev --output output/dev.jsonl --score /path/to/dev/practice_labels.jsonl
 make test                                       # data-free policy, loader and packaging tests
 ```
 
-`system/run` works from any working directory and with spaces in either path. It reads only the data folder it is given and writes one JSON line per hit.
+`make test` runs these, which you can also run directly:
 
-## Results (official `validate.py`, development set)
+```sh
+python3 tests/test_policy.py          # 27 synthetic rare-situation policy cases
+python3 tests/test_ages.py
+python3 tests/test_textutil.py
+python3 tests/test_loader.py
+python3 tests/test_runner_boundary.py
+python3 tests/test_real_format.py
+python3 tests/test_packaging.py
+python3 -m py_compile system/*.py
+```
 
-| Check | Result |
-| --- | --- |
-| Output validity | 819 lines read, 0 problems |
-| Practice labels (50 hits) | **50/50 right decisions, 0 unsafe clearances**, decision score 100.0 |
-| Reasons on right decisions | reason code 100%, customer record 100% |
-| All 819 dev hits | 464 `DIFFERENT_ENTITY` · 125 `SAME_ENTITY` · 230 `REVIEW` (28% review rate) |
-| Synthetic shadow sets (559 hits, seeds 7 and 21, `tools/shadow.py`) | 97.9% right, **0 unsafe**, score 0.965 |
-| Reproducibility | byte-identical output across runs and any `PYTHONHASHSEED` |
-| Run time and cost | about 15 s on one laptop core; $0 (no model calls) |
+**Check determinism yourself:** run it twice and compare hashes (on macOS use `shasum -a 256`). The two hashes must match; we don't print a hash here because the output changes as fixes land.
 
-Practice and shadow scores are development feedback, not proof of unseen-set performance.
+```sh
+system/run /path/to/dev /tmp/run1.jsonl && system/run /path/to/dev /tmp/run2.jsonl
+sha256sum /tmp/run1.jsonl /tmp/run2.jsonl output/dev.jsonl
+```
+
+`system/run` works from any working directory and with spaces in either path. It reads only the data folder it is given and writes one JSON line per hit. If the data folder or its `hits.jsonl` is missing, or `hits.jsonl` has no readable hit records, it stops with exit code 2 and a clear message and writes no output file.
 
 ## How it works
 
@@ -79,7 +151,7 @@ An unsafe clearance costs 60; a needless review costs 2–3. The system is built
 
 ## Full local workflow
 
-Use Python 3.11 and run these commands from the repository root. **The dataset is for event participants only and must never be committed.** Obtain the official development folder from the event organisers and place it at `dev/` (already gitignored):
+Use Python 3.11 or newer and run these commands from the repository root. **The dataset is for event participants only and must never be committed.** Obtain the official development folder from the event organisers and place it at `dev/` (already gitignored):
 
 ```sh
 system/run dev output/dev.jsonl

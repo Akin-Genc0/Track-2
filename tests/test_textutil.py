@@ -27,5 +27,13 @@ check("long_name_under_1s", time.time() - t < 1.0, True)
 # ordinary cases unchanged
 check("one_part_of_shorter", m.agree_parts(["smith"], ["john", "smith"]), True)
 check("single_overlap_not_enough", m.agree_parts(["john", "smith"], ["john", "jones"]), False)
-print(f"{7 - fails}/7 passed")
+# loose agreement (only ever stops a clear on the verified name): transliteration skeleton, split compounds, Cyrillic
+loose = lambda a, b: m.agree_parts_loose(m.parts(a), m.parts(b))
+for a, b in [("Yasin Khan", "Yaseen Khan"), ("Abdul Rahman Yasin", "Abdulrahman Yaseen"), ("Yusuf Qaradawi", "Yousef al-Qaradawi"),
+             ("Alexei Navalny", "Aleksey Navalnyy"), ("Abd al-Rahman", "Abdulrahman"), ("Владимир Путин", "Vladimir Putin")]:
+    check(f"loose {a} / {b}", loose(a, b), True)
+    check(f"strict unchanged {a} / {b}", m.agree(a, b), False)
+for a, b in [("John Smith", "John Jones"), ("Ali Omar", "Ali Hassan"), ("Starling Logistics", "ST Logistics")]:
+    check(f"loose still different {a} / {b}", loose(a, b), False)
+print(f"{22 - fails}/22 passed")
 sys.exit(1 if fails else 0)

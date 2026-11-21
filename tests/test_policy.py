@@ -187,6 +187,13 @@ case("note_dob_ambiguous_day_month", [cust("CUS-000043", "Pavel Orlin", "1980-04
      hit("A-000043", "Orlin, Pavel", dobs=["1980-03"], countries=["United Kingdom"]), "REVIEW", accounts=[acc("ACC-43", "CUS-000043")],
      notes=[{"note_id": "NOTE-43", "requester_email": "po@x.example", "created_at": "2024-01-01", "channel": "kyc",
              "text": "Onfido verified the passport of PAVEL ORLIN (DOB 03/04/1980) from the United Kingdom."}])
+# 39 an explanation says which side is missing: no hit DOB -> REVIEW says so; no hit country -> NAME_DOB_MATCH says so
+case("review_says_hit_dob_missing", [cust("CUS-000028", "Ada Obi", "1980-01-01")], alert("A-000028", "Ada Obi"),
+     hit("A-000028", "Ada Obi", countries=["United Kingdom"]), "REVIEW", "INSUFFICIENT_DATA",
+     says=["the hit gives no date of birth to compare"])
+case("name_dob_match_says_country_missing", [cust("CUS-000029", "Ada Nwosu", "1980-01-01")], alert("A-000029", "Ada Nwosu"),
+     hit("A-000029", "Ada Nwosu", dobs=["1980-01-01"]), "SAME_ENTITY", "NAME_DOB_MATCH",
+     says=["because the hit lists no country"])
 
 fails = 0
 for c in CASES:

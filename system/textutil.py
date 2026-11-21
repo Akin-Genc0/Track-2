@@ -201,10 +201,33 @@ def lev(a, b, cap=3):
     return prev[-1]
 
 
+# ICAO Doc 9303 (part 3) Cyrillic -> Latin; only used to find loose agreement, never to compare across scripts for a clear
+_CYR = dict(zip("абвгдеёжзийклмнопрстуфхцчшщъыьэюяґєіїўђѓјљњћќџѕ",
+                "a b v g d e e zh z i i k l m n o p r s t u f kh ts ch sh shch ie y  e iu ia g ie i i u d g j lj nj c k dz dz".split(" ")))
+
+
+def cyr_latin(p):
+    return "".join(_CYR.get(c, c) for c in p)
+
+
+_SKEL = [("ph", "f"), ("x", "ks"), ("kh", "h"), ("q", "k"), ("ou", "u"), ("oo", "u"), ("w", "u"),
+         ("ee", "i"), ("ie", "i"), ("ey", "i"), ("ei", "i"), ("iy", "i"), ("y", "i")]
+
+
+def skeleton(p):
+    """Transliteration skeleton: 'yaseen'/'yasin' -> 'isn', 'qaradawi' -> 'krd', 'navalnyy' -> 'nvln'."""
+    s = re.sub(r"abd(?:ul|al|el|ol|u)", "abd", p)
+    for a, b in _SKEL:
+        s = s.replace(a, b)
+    s = re.sub(r"(.)\1+", r"\1", s)
+    return s[:1] + re.sub(r"[aeiou]", "", s[1:])
+
+
 class NameMatcher:
     def __init__(self, groups, legal_forms):
         self.group_of = {}
         self.members = {}
+        self._loose = False
         for gi, g in enumerate(groups):
             for n in g:
                 k = fold(n).strip()
@@ -223,6 +246,8 @@ class NameMatcher:
             return True
         if self._edit_ok(a, b):
             return True
+        if self._loose and len(a) >= 4 and len(b) >= 4 and a[0] == b[0] and skeleton(a) == skeleton(b):
+            return True      # loose only: transliterations of one spelling ('yaseen'/'yasin', 'aleksey'/'alexei')
         # a misspelling of any member of one part's variant group ('Muammad' for 'Mohammed', grouped with 'Muhammad')
         return any(self._edit_ok(v, b) for g in ga or () for v in self.members[g]) or \
             any(self._edit_ok(a, v) for g in gb or () for v in self.members[g])
@@ -236,8 +261,13 @@ class NameMatcher:
         return lev(a, b, lim) <= lim
 
     def agree_parts_loose(self, A, B):
-        """Same as agree_parts now that part_match always accepts a misspelt variant-group member; kept for callers."""
-        return self.agree_parts(A, B)
+        """agree_parts, also matching transliterations of one spelling and Cyrillic parts to their Latin reading.
+        Only used to stop a clear on the verified name, never to confirm."""
+        self._loose = True
+        try:
+            return self.agree_parts([cyr_latin(p) for p in A], [cyr_latin(p) for p in B])
+        finally:
+            self._loose = False
 
     def _candidates(self, A, B):
         c = []
@@ -253,6 +283,18 @@ class NameMatcher:
             for i in range(len(A) - 1):
                 if b == A[i] + A[i + 1] or b == A[i + 1] + A[i]:
                     c.append((frozenset([i, i + 1]), frozenset([j])))
+        if self._loose:      # particle-split compound: 'abdulrahman' vs 'abd al rahman', within the edit limit
+            for X, Y, flip in ((A, B, False), (B, A, True)):
+                for i, x in enumerate(X):
+                    if len(x) < 8:
+                        continue
+                    for j in range(len(Y)):
+                        for k in (2, 3):
+                            # not when x already matches one of the joined parts ('logistics' vs 'st'+'logistics')
+                            if j + k <= len(Y) and self._edit_ok(x, "".join(Y[j:j + k])) and \
+                                    not any(self._edit_ok(x, y) for y in Y[j:j + k]):
+                                pair = (frozenset([i]), frozenset(range(j, j + k)))
+                                c.append(pair[::-1] if flip else pair)
         return c
 
     def agree_parts(self, A, B):

@@ -180,6 +180,16 @@ if __name__ == "__main__":
     if len(sys.argv) != 3:
         print("usage: system/run <data folder> <output file>", file=sys.stderr)
         sys.exit(2)
+    # a wrong path must not pass for an empty work queue: fail loudly before writing anything
+    if not os.path.isdir(sys.argv[1]):
+        print(f"error: data folder not found: {sys.argv[1]}", file=sys.stderr)
+        sys.exit(2)
+    if not os.path.isfile(os.path.join(sys.argv[1], "hits.jsonl")):
+        print(f"error: hits.jsonl not found in data folder: {sys.argv[1]}", file=sys.stderr)
+        sys.exit(2)
+    if not recover_rows(sys.argv[1], "hits")[0]:
+        print(f"error: hits.jsonl has no readable hit records: {os.path.join(sys.argv[1], 'hits.jsonl')}", file=sys.stderr)
+        sys.exit(2)
     rows = run(sys.argv[1], sys.argv[2])
     from collections import Counter
     print(json.dumps(dict(Counter(r["decision"] for r in rows))), file=sys.stderr)

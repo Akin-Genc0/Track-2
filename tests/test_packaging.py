@@ -36,6 +36,22 @@ class Packaging(unittest.TestCase):
             self.assertEqual(set(rows[0]), {'hit_id', 'alert_id', 'decision', 'reason_code',
                                             'customer_record_id', 'reason', 'evidence'})
 
+    def test_missing_data_fails_loudly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            empty = Path(tmp) / 'no hits'
+            empty.mkdir()
+            blank = Path(tmp) / 'blank hits'
+            blank.mkdir()
+            (blank / 'hits.jsonl').write_text('\n')
+            (blank / 'alerts.jsonl').write_text(json.dumps({'alert_id': 'A-00000A', 'hit_ids': ['H-00000A']}) + '\n')
+            for folder, needle in ((Path(tmp) / 'missing', 'data folder not found'), (empty, 'hits.jsonl not found'),
+                                   (blank, 'no readable hit records')):
+                out = Path(tmp) / 'out.jsonl'
+                proc = subprocess.run([str(RUN), str(folder), str(out)], capture_output=True, text=True, timeout=120)
+                self.assertEqual(proc.returncode, 2, proc.stderr)
+                self.assertIn(needle, proc.stderr)
+                self.assertFalse(out.exists(), 'no output file may be written for a missing data folder')
+
     def test_no_data_or_secrets_tracked(self):
         if shutil.which('git') is None or not (ROOT / '.git').exists():
             self.skipTest('not a git checkout')
