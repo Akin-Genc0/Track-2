@@ -1,38 +1,90 @@
 """Entry point: python3 screen.py <data folder> <output file>.  Deterministic, stdlib only, no network."""
 import json, os, sys
-from data import DataRoom, as_text, as_list
-from textutil import NameMatcher
-from resolve import CustomerIndex
-from profile import Profile
-from hitfacts import HitFacts, build_search_index
-from decide import Decider
+from data import DataRoom, as_text, as_list, normalize
+MODULE_ERROR = None
+try:
+    from textutil import NameMatcher
+    from resolve import CustomerIndex
+    from profile import Profile
+    from hitfacts import HitFacts, build_search_index
+    from decide import Decider
+except Exception as exc:
+    MODULE_ERROR = type(exc).__name__
+
+
+
+CORE = ("customers", "accounts", "onboarding", "kyc_checks", "notes")
+
+
+def recover_rows(folder, name):
+    """Best-effort inventory plus explicit loss signal; never silently trust partial sources."""
+    rows, damaged = [], False
+    try:
+        with open(os.path.join(folder, name + ".jsonl"), encoding="utf-8-sig") as source:
+            for line in source:
+                if not line.strip():
+                    continue
+                try:
+                    value = json.loads(line)
+                    if not isinstance(value, dict):
+                        raise ValueError("not a record")
+                    rows.append(normalize(value, name))
+                except Exception:
+                    damaged = True
+    except Exception:
+        damaged = True
+    return rows, damaged
+
+
+def fallback(detail, customer_id=None):
+    return {"decision": "REVIEW", "reason_code": "INSUFFICIENT_DATA",
+            "customer_record_id": customer_id, "evidence": [],
+            "reason": detail + ". An analyst must review this hit before a decision can be made."}
 
 
 def run(folder, out_path):
-    room = DataRoom(folder)
-    matcher = NameMatcher(room.groups, room.legal_forms)
-    idx = CustomerIndex(room, matcher)
-    sidx = build_search_index(room.search)
-    decider = Decider(matcher)
-    alerts = {as_text(a.get("alert_id")): a for a in room.alerts}
-    hits_by_alert = {}
-    for h in room.hits:
-        hits_by_alert.setdefault(as_text(h.get("alert_id")), []).append(h)
-    # hits referenced only by alerts.hit_ids
-    hit_by_id = {as_text(h.get("hit_id")): h for h in room.hits}
+    # Recover the work queue independently of decision-module initialization.
+    hits, _ = recover_rows(folder, "hits")
+    alert_rows, _ = recover_rows(folder, "alerts")
+    alerts = {as_text(a.get("alert_id")): a for a in alert_rows}
+    by_id = {as_text(h.get("hit_id")): h for h in hits if as_text(h.get("hit_id"))}
+    missing_hits = set()
+    for alert in alert_rows:
+        for hid in as_list(alert.get("hit_ids")):
+            if hid not in by_id:
+                by_id[hid] = {"hit_id": hid, "alert_id": as_text(alert.get("alert_id"))}
+                missing_hits.add(hid)
+            elif not by_id[hid].get("alert_id"):
+                by_id[hid]["alert_id"] = as_text(alert.get("alert_id"))
+    unavailable = [name + ".jsonl" for name in CORE if recover_rows(folder, name)[1]]
+    setup_error = None
+    try:
+        if MODULE_ERROR:
+            raise RuntimeError("decision module import failed: " + MODULE_ERROR)
+        room = DataRoom(folder)
+        matcher = NameMatcher(room.groups, room.legal_forms)
+        idx = CustomerIndex(room, matcher)
+        sidx = build_search_index(room.search)
+        decider = Decider(matcher)
+    except Exception as exc:
+        setup_error = type(exc).__name__
     resolved_cache, profile_cache = {}, {}
     rows = []
-    for h in sorted(room.hits, key=lambda h: (as_text(h.get("alert_id")), as_text(h.get("hit_id")))):
+    for h in sorted(by_id.values(), key=lambda h: (as_text(h.get("alert_id")), as_text(h.get("hit_id")))):
         aid = as_text(h.get("alert_id"))
-        alert = alerts.get(aid)
-        if alert is None:
-            alert = next((a for a in room.alerts if as_text(h.get("hit_id")) in as_list(a.get("hit_ids"))), {"alert_id": aid})
-            aid = as_text(alert.get("alert_id")) or aid
-        hf = HitFacts(h, matcher, sidx)
-        if aid not in resolved_cache:
-            resolved_cache[aid] = idx.resolve_with_near(alert)
-        persons, path, near = resolved_cache[aid]
+        customer_id = None
         try:
+            if setup_error:
+                raise RuntimeError("initialization failed: " + setup_error)
+            if as_text(h.get("hit_id")) in missing_hits:
+                raise ValueError("hit record unavailable")
+            alert = alerts.get(aid, {"alert_id": aid})
+            hf = HitFacts(h, matcher, sidx)
+            if aid not in resolved_cache:
+                resolved_cache[aid] = idx.resolve_with_near(alert)
+            persons, path, near = resolved_cache[aid]
+            if len(persons) == 1:
+                customer_id = persons[0]["primary"]
             if not persons:
                 res = decider.decide_unresolved(hf, alert, path)
             else:
@@ -88,12 +140,19 @@ def run(folder, out_path):
                            "evidence": list(res["evidence"]) + [e for _, r in held for e in r["evidence"] if e not in res["evidence"]],
                            "reason": f"The customer who fits the alert is cleared ({res['reason_code']}), but {ids} fits the screened name and "
                                      f"details except the city spelling and leads to {summary}. A person must decide which customer was screened."}
-        except Exception as e:  # never crash a run; fail safe to REVIEW
-            res = {"decision": "REVIEW", "reason_code": "INSUFFICIENT_DATA", "customer_record_id": None,
-                   "reason": f"The hit could not be evaluated automatically ({type(e).__name__}), so it is left for review.", "evidence": []}
-        rows.append({"hit_id": as_text(h.get("hit_id")), "alert_id": aid, "decision": res["decision"],
-                     "reason_code": res["reason_code"], "customer_record_id": res.get("customer_record_id"),
-                     "reason": res["reason"], "evidence": list(res["evidence"])})
+            if unavailable and res["decision"] == "DIFFERENT_ENTITY":
+                res = fallback("Required sources were unavailable or partly unreadable: " + ", ".join(unavailable),
+                               res.get("customer_record_id"))
+            row = {"hit_id": as_text(h.get("hit_id")), "alert_id": aid, "decision": res["decision"],
+                   "reason_code": res["reason_code"], "customer_record_id": res.get("customer_record_id"),
+                   "reason": res["reason"], "evidence": list(res["evidence"])}
+            json.dumps(row, allow_nan=False)
+        except Exception as e:
+            detail = "The automated check could not complete (" + (setup_error or type(e).__name__) + ")"
+            if unavailable:
+                detail += "; unavailable or partly unreadable sources: " + ", ".join(unavailable)
+            row = dict(hit_id=as_text(h.get("hit_id")), alert_id=aid, **fallback(detail, customer_id))
+        rows.append(row)
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
         for r in rows:
