@@ -5,7 +5,7 @@ document number on approved KYC checks, transitively)."""
 import re
 from collections import defaultdict
 from data import as_text
-from textutil import parse_date, fold, entity_kind, placeholder_dob
+from textutil import parse_date, fold, entity_kind, placeholder_dob, approved_result
 from countries import norm_country
 
 
@@ -124,7 +124,7 @@ class CustomerIndex:
         by_doc = defaultdict(set)
         for rid in sorted(C):
             for k in self.kyc_checks_for(rid):
-                if as_text(k.get("result")).lower() in ("approved", "passed", "clear", "verified", "success"):
+                if approved_result(as_text(k.get("result"))):
                     dn = norm_doc(k.get("document_number"))
                     if dn:
                         by_doc[dn].add(rid)

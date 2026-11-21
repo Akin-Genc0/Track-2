@@ -4,10 +4,9 @@ One person's facts from all their records: names, declared and verified DOB, ver
 Verified beats declared: the most recent APPROVED identity check (KYC provider or onboarding note) wins."""
 import re
 from data import as_text
-from textutil import parse_date, find_dates, fold, entity_kind, placeholder_dob
+from textutil import parse_date, find_dates, fold, entity_kind, placeholder_dob, approved_result
 from countries import norm_country, countries_in_text, countries_in_value
 
-APPROVED = {"approved", "passed", "pass", "clear", "cleared", "verified", "success", "successful", "accepted"}
 _DOC_RE = re.compile(r"passport|national id|identity card|id card|identity document|driv(?:ing|er'?s?) licen[cs]e|residence permit|registry extract|"
                      r"company registry|registration certificate|certificate of incorporation|document|\bid\b", re.I)
 _VERIFY_RE = re.compile(r"verif|validat|confirm|approv|clear|vet|pass|check|screen|match|authenticat|onboard|kyc|identity", re.I)
@@ -56,7 +55,9 @@ _CAPS_STOP = {"DOB", "ID", "KYC", "UK", "US", "USA", "EU", "UAE", "AML", "PEP", 
 def parse_id_note(note):
     """Parse a free-text identity-verification note. Returns dict or None if it is not an identity check."""
     t = as_text(note.get("text"))
-    ch = as_text(note.get("channel")).lower()
+    ch = as_text(note.get("channel")).strip().lower()
+    # 'kyc', 'KYC ', 'identity', 'onboarding', 'id verification': all the identity-check channel
+    ch = "kyc" if re.search(r"kyc|identity|onboard|verif|\bidv?\b", ch) else ch
     if not t:
         return None
     is_id = (ch == "kyc" and (_DOC_RE.search(t) or _VERIFY_RE.search(t))) or (_DOC_RE.search(t) and _VERIFY_RE.search(t) and _BIRTH_RE.search(t))
@@ -196,7 +197,7 @@ class Profile:
                 checks.append({"id": as_text(k.get("check_id")), "name": strip_titles(as_text(k.get("verified_name"))) or None,
                                "dob": None if placeholder_dob(parse_date(k.get("verified_dob"))) else parse_date(k.get("verified_dob")), "country": norm_country(k.get("document_country"), codes_any_case=True),
                                "date": parse_date(k.get("checked_at")),
-                               "approved": as_text(k.get("result")).lower() in APPROVED, "source": "kyc"})
+                               "approved": approved_result(as_text(k.get("result"))), "source": "kyc"})
         self.residence_notes = []
         seen_notes = set()
         for r in self.records:
