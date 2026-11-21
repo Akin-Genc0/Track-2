@@ -984,7 +984,7 @@
         meta("Alert", hit.alert_id, true),
         meta("Screened", fmtLong(alert.screened_at)),
         meta("Match score", hit.match_score != null ? String(hit.match_score) : null, true),
-        el("button", { type: "button", class: "map-open", onclick: () => { state.mapHit = hit.hit_id; state.mapPos = null; state.view = "map"; render(); } }, svg("map"), "Link map")
+        el("button", { type: "button", class: "map-open", onclick: () => { state.mapHit = hit.hit_id; state.mapMode = "case"; state.mapPos = null; state.view = "map"; render(); } }, svg("map"), "Link map")
       ),
       el("h2", { class: "case-title" }, hit.name || "Unnamed list entry"),
       el("div", { class: "case-sub" },
@@ -1332,6 +1332,118 @@
     return { nodes: [...nodes.values()], edges: kept, hit, alert };
   }
 
+
+  // ---------- link map search ----------
+  function mapSearch(bundle, q) {
+    const f = fold(q).trim();
+    if (f.length < 2) return [];
+    const preds = predictions(bundle);
+    const out = [];
+    for (const hit of Object.values(bundle.hits)) {
+      const alert = bundle.alerts[hit.alert_id] || {};
+      const p = preds[hit.hit_id];
+      const cust = p && p.customer_record_id && bundle.customers[p.customer_record_id];
+      const fields = [hit.name, ...asList(hit.aliases), alert.customer_name, cust && cust.full_name];
+      const ids = [hit.hit_id, hit.alert_id, p && p.customer_record_id, ...asList(p && p.evidence), ...asList((bundle.cases[hit.alert_id] || {}).candidate_customer_ids)];
+      const idHit = ids.some((x) => x && fold(x) === f);
+      const nameHit = fields.some((x) => x && fold(x).includes(f));
+      if (!idHit && !nameHit) continue;
+      out.push({ hit, alert, pred: p, score: idHit ? 0 : fields.findIndex((x) => x && fold(x).startsWith(f)) === -1 ? 2 : 1 });
+    }
+    const rank = { SAME_ENTITY: 0, REVIEW: 1, DIFFERENT_ENTITY: 2 };
+    out.sort((a, b) => a.score - b.score || (rank[a.pred && a.pred.decision] ?? 3) - (rank[b.pred && b.pred.decision] ?? 3));
+    return out;
+  }
+
+  function buildSearchGraph(bundle, q, results) {
+    const MAX = 14;
+    const shown = results.slice(0, MAX);
+    const nodes = new Map(), edges = [];
+    const add = (id, col, kind, icon, title, sub, extra = {}) => { if (!nodes.has(id)) nodes.set(id, { id, col, kind, icon, title, sub, ...extra }); return id; };
+    const link = (a, b, label, strong) => { if (nodes.has(a) && nodes.has(b) && !edges.some((e) => e.a === a && e.b === b)) edges.push({ a, b, label, strong: !!strong }); };
+    const Q = add("query", 0, "Search", "scan", `“${q}”`, `${results.length} matching ${results.length === 1 ? "hit" : "hits"}`, { meta: results.length > MAX ? `Showing the first ${MAX}` : "" });
+    for (const r of shown) {
+      const { hit, alert, pred } = r;
+      const A = add("alert:" + hit.alert_id, 1, "Alert", "alert", alert.customer_name || "Screened customer", hit.alert_id, { rec: hit.alert_id });
+      link(Q, A, null, false);
+      const cse = bundle.cases[hit.alert_id] || {};
+      const resolvedId = pred && pred.customer_record_id && bundle.customers[pred.customer_record_id] ? pred.customer_record_id : null;
+      const cands = [...new Set([resolvedId, ...asList(cse.candidate_customer_ids)].filter((c) => c && bundle.customers[c]))].slice(0, resolvedId ? 1 : 2);
+      for (const cid of cands) {
+        const c = bundle.customers[cid];
+        add(cid, 2, "Customer", "person", c.full_name || cid, cid, { rec: cid, resolved: cid === resolvedId, meta: [c.dob && "born " + c.dob, c.nationality || c.residence_country].filter(Boolean).join(", ") });
+        link(A, cid, null, cid === resolvedId);
+      }
+      const H = add("hit:" + hit.hit_id, 3, "Watchlist hit", "list", hit.name || hit.hit_id, hit.hit_id, { rec: hit.hit_id, meta: categoryOf(hit) });
+      const dec = pred && pred.decision ? pred.decision : "PENDING";
+      const D = add("dec:" + hit.hit_id, 4, "Decision", "map", DECISION_LABEL[dec] || "Pending", pred && pred.reason_code ? pred.reason_code : "no decision", { decision: dec, hit: hit.hit_id });
+      link(H, D, null, true);
+      if (resolvedId) link(resolvedId, D, "resolved", true);
+      link(A, H, resolvedId ? null : "screened against", false);
+    }
+    // the same customer behind several alerts is the interesting part
+    for (const n of nodes.values()) if (n.kind === "Customer") {
+      const inbound = edges.filter((e) => e.b === n.id && e.a.startsWith("alert:")).length;
+      if (inbound > 1) { n.shared = true; n.meta = `On ${inbound} alerts` + (n.meta ? ", " + n.meta : ""); }
+    }
+    if (results.length > MAX) nodes.set("more:search", { id: "more:search", col: 1, kind: "More", icon: "all", title: `${results.length - MAX} more`, sub: "narrow the search to see them" });
+    return { nodes: [...nodes.values()], edges, search: true, q, total: results.length, totalAlerts: new Set(results.map((r) => r.hit.alert_id)).size, shownHits: shown.length };
+  }
+
+  function mapSearchBox(bundle) {
+    const wrap = el("div", { class: "map-search" });
+    const input = el("input", { type: "search", value: state.mapQuery || "", placeholder: "Search a person, hit, alert or customer ID", "aria-label": "Search for a person or case to map", autocomplete: "off", role: "combobox", "aria-expanded": "false", "aria-controls": "map-results" });
+    const list = el("div", { class: "map-results", id: "map-results", role: "listbox", hidden: "" });
+    wrap.append(el("span", { class: "ms-icon" }, svg("scan")), input, list);
+    let items = [], active = -1, timer = null;
+    const close = () => { list.hidden = true; input.setAttribute("aria-expanded", "false"); active = -1; };
+    const pick = (i) => {
+      const it = items[i]; if (!it || it.none) return;
+      if (it.all) { state.mapQuery = input.value.trim(); state.mapMode = "search"; }
+      else { state.mapMode = "case"; state.mapHit = it.hitId; state.mapQuery = input.value.trim(); }
+      state.mapPos = null; close(); renderMap(bundle);
+    };
+    const paint = () => {
+      list.replaceChildren(...items.map((it, i) => {
+        const o = el("div", { class: "mr-item" + (i === active ? " active" : "") + (it.all ? " all" : "") + (it.none ? " none" : ""), role: "option", "aria-selected": i === active ? "true" : "false" }, ...it.content);
+        o.addEventListener("mousedown", (e) => { e.preventDefault(); pick(i); });
+        return o;
+      }));
+    };
+    const update = () => {
+      const q = input.value.trim();
+      if (q.length < 2) { close(); return; }
+      const res = mapSearch(bundle, q);
+      items = [];
+      if (res.length > 1) items.push({ all: true, content: [svg("map"), el("span", { class: "mr-main" }, `Map all ${res.length} results together`), el("span", { class: "mr-sub" }, "Shared people linked")] });
+      for (const r of res.slice(0, 8)) {
+        const dec = r.pred && r.pred.decision ? r.pred.decision : "PENDING";
+        items.push({ hitId: r.hit.hit_id, content: [
+          el("span", { class: "mr-dot " + (DECISION_CLASS[dec] || "pending") }),
+          el("span", { class: "mr-main" }, r.hit.name || r.hit.hit_id, el("span", { class: "mr-cust" }, " · customer " + (r.alert.customer_name || "unknown"))),
+          el("span", { class: "mr-sub mono" }, r.hit.hit_id) ] });
+      }
+      if (!res.length) items.push({ none: true, content: [el("span", { class: "mr-sub" }, `Nothing matches “${q}”`)] });
+      if (res.length > 8) items.push({ none: true, content: [el("span", { class: "mr-sub" }, `${res.length - 8} more. Use “Map all” or keep typing`)] });
+      active = items.findIndex((x) => !x.none);
+      list.hidden = false; input.setAttribute("aria-expanded", "true"); paint();
+    };
+    input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(update, 120); });
+    input.addEventListener("focus", () => { if (input.value.trim().length >= 2) update(); });
+    input.addEventListener("blur", () => setTimeout(close, 100));
+    input.addEventListener("keydown", (e) => {
+      if (list.hidden && e.key === "Enter") { e.preventDefault(); update(); return; }
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault(); if (!items.some((x) => !x.none)) return;
+        let i = active;
+        do { i = (i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length; } while (items[i].none);
+        active = i; paint();
+      } else if (e.key === "Enter") { e.preventDefault(); if (active >= 0) pick(active); }
+      else if (e.key === "Escape") { close(); }
+    });
+    return wrap;
+  }
+
   const NODE_W = 196, NODE_H = 64, LEVEL_GAP = 64, SIB_GAP = 20;
   function layoutGraph(g) {
     // top-down tree: one level per record type, children centred under their parents
@@ -1357,10 +1469,13 @@
 
   function renderMap(bundle) {
     if (!state.mapHit || !bundle.hits[state.mapHit]) state.mapHit = state.selectedId || Object.keys(bundle.hits)[0];
-    const g = buildGraph(bundle, state.mapHit);
+    const searching = state.mapMode === "search" && state.mapQuery;
+    const sres = searching ? mapSearch(bundle, state.mapQuery) : null;
+    const g = searching && sres.length ? buildSearchGraph(bundle, state.mapQuery, sres) : buildGraph(bundle, state.mapHit);
+    const mapKey = searching && sres.length ? "q:" + state.mapQuery : state.mapHit;
     const stage = $("stage");
     if (!g) { stage.replaceChildren(el("div", { class: "tool" }, el("div", { class: "tool-empty" }, "Pick a hit in the queue first."))); return; }
-    if (!state.mapPos || state.mapPos._hit !== state.mapHit) { state.mapPos = layoutGraph(g); state.mapPos._hit = state.mapHit; state.mapView = null; }
+    if (!state.mapPos || state.mapPos._hit !== mapKey) { state.mapPos = layoutGraph(g); state.mapPos._hit = mapKey; state.mapView = null; }
     const pos = state.mapPos;
     const view = state.mapView || (state.mapView = { x: 0, y: 0, k: 1 });
     const preds = predictions(bundle);
@@ -1387,12 +1502,12 @@
     const nodeEls = {};
     for (const n of g.nodes) {
       const cls = ["map-node", "k-" + n.kind.toLowerCase().replace(/\s+/g, "-")];
-      if (n.cited) cls.push("cited"); if (n.resolved) cls.push("resolved"); if (n.focus) cls.push("focus");
+      if (n.cited) cls.push("cited"); if (n.resolved) cls.push("resolved"); if (n.focus) cls.push("focus"); if (n.shared) cls.push("shared");
       if (n.decision) cls.push("dec-" + (DECISION_CLASS[n.decision] || "pending"));
       const node = el("div", { class: cls.join(" "), tabindex: "0", role: "button", "aria-label": `${n.kind}: ${n.title}` },
         el("span", { class: "mn-icon" }, svg(n.icon)),
         el("div", { class: "mn-body" },
-          el("div", { class: "mn-kind" }, n.kind, n.cited ? el("span", { class: "mn-tag" }, "Cited") : null, n.resolved ? el("span", { class: "mn-tag" }, "Resolved") : null),
+          el("div", { class: "mn-kind" }, n.kind, n.cited ? el("span", { class: "mn-tag" }, "Cited") : null, n.resolved ? el("span", { class: "mn-tag" }, "Resolved") : null, n.shared ? el("span", { class: "mn-tag" }, "Shared") : null),
           el("div", { class: "mn-title" }, n.title),
           el("div", { class: "mn-sub mono" }, n.sub))
       );
@@ -1499,12 +1614,13 @@
       const k = Math.min(1, Math.max(0.7, Math.min((r.width - 48) / (maxX - minX + 48), (r.height - 130) / (maxY - minY + 40))));
       const w = (maxX - minX) * k, h = (maxY - minY) * k;
       view.k = k;
-      view.x = w + 48 <= r.width ? (r.width - w) / 2 - minX * k : 24 - minX * k;
+      // wide trees open centred on the top of the tree; pan to see the sides
+      view.x = r.width / 2 - ((minX + maxX) / 2) * k;
       view.y = h + 130 <= r.height ? 44 + (r.height - 130 - h) / 2 - minY * k : 44 - minY * k;
       applyView();
     };
     const zoomLabel = el("span", { class: "zoom-label mono" }, "100%");
-    const hitsInAlert = asList(g.alert.hit_ids);
+    const hitsInAlert = g.search ? [] : asList(g.alert.hit_ids);
     const toolbar = el("div", { class: "map-toolbar" },
       el("button", { type: "button", class: "tb-btn", title: "Zoom out", "aria-label": "Zoom out", onclick: () => zoomTo(view.k / 1.2) }, "−"),
       zoomLabel,
@@ -1514,24 +1630,32 @@
       el("button", { type: "button", class: "tb-btn wide", onclick: () => { state.mapPos = null; renderMap(bundle); } }, "Reset layout")
     );
     const legend = el("div", { class: "map-legend" },
-      el("span", null, el("i", { class: "lg-line strong" }), "Path the decision used"),
+      el("span", null, el("i", { class: "lg-line strong" }), g.search ? "Resolved customer and decision" : "Path the decision used"),
       el("span", null, el("i", { class: "lg-line" }), "Other link"),
       el("span", null, "Drag nodes to rearrange, drag the background to pan, ⌘ scroll to zoom"));
 
-    const head = el("div", { class: "map-head" },
-      el("div", null,
-        el("div", { class: "case-meta" },
-          el("span", { class: "meta" }, el("span", { class: "meta-k" }, "Alert"), el("span", { class: "mono" }, g.hit.alert_id)),
-          el("span", { class: "meta" }, el("span", { class: "meta-k" }, "Screened customer"), el("span", null, g.alert.customer_name || "unknown")),
-          hitsInAlert.length > 1 ? el("span", { class: "meta" }, el("span", { class: "meta-k" }, "Hits on this alert"), el("span", { class: "mono" }, String(hitsInAlert.length))) : null),
-        el("h2", { class: "map-title" }, g.hit.name || state.mapHit, el("span", { class: "dec " + (DECISION_CLASS[dec] || "pending") }, DECISION_LABEL[dec] || "Pending"))),
-      el("div", { class: "map-actions" },
-        el("button", { type: "button", class: "btn", onclick: () => openCase(state.mapHit) }, "Open case")));
+    const head = g.search
+      ? el("div", { class: "map-head" },
+          el("div", null,
+            el("div", { class: "case-meta" }, el("span", { class: "meta" }, el("span", { class: "meta-k" }, "Combined map"), el("span", null, `${g.total} ${g.total === 1 ? "hit" : "hits"} across ${g.totalAlerts} ${g.totalAlerts === 1 ? "alert" : "alerts"}` + (g.shownHits < g.total ? `, first ${g.shownHits} mapped` : "")))),
+            el("h2", { class: "map-title" }, `Results for “${g.q}”`)),
+          el("div", { class: "map-actions" }, mapSearchBox(bundle),
+            el("button", { type: "button", class: "btn", onclick: () => { state.mapMode = "case"; state.mapQuery = ""; state.mapPos = null; renderMap(bundle); } }, "Back to case")))
+      : el("div", { class: "map-head" },
+          el("div", null,
+            el("div", { class: "case-meta" },
+              el("span", { class: "meta" }, el("span", { class: "meta-k" }, "Alert"), el("span", { class: "mono" }, g.hit.alert_id)),
+              el("span", { class: "meta" }, el("span", { class: "meta-k" }, "Screened customer"), el("span", null, g.alert.customer_name || "unknown")),
+              hitsInAlert.length > 1 ? el("span", { class: "meta" }, el("span", { class: "meta-k" }, "Hits on this alert"), el("span", { class: "mono" }, String(hitsInAlert.length))) : null),
+            el("h2", { class: "map-title" }, g.hit.name || state.mapHit, el("span", { class: "dec " + (DECISION_CLASS[dec] || "pending") }, DECISION_LABEL[dec] || "Pending"))),
+          el("div", { class: "map-actions" }, mapSearchBox(bundle),
+            el("button", { type: "button", class: "btn", onclick: () => openCase(state.mapHit) }, "Open case")));
+    if (searching && !sres.length) head.appendChild(el("div", { class: "map-note" }, `Nothing matches “${state.mapQuery}”, so this is still the current case`));
     const wrap = el("div", { class: "map-wrap" }, head, el("div", { class: "map-body" }, el("div", { class: "map-stage" }, canvas, toolbar, legend), panel));
     stage.replaceChildren(wrap);
     drawEdges();
     requestAnimationFrame(() => { drawEdges(); if (!state.mapViewSet) fit(); state.mapViewSet = false; applyView(); });
-    showDetail(g.nodes.find((n) => n.focus && n.decision) || g.nodes[0]);
+    showDetail(g.search ? (g.nodes.find((n) => n.shared) || g.nodes[0]) : (g.nodes.find((n) => n.focus && n.decision) || g.nodes[0]));
   }
 
   // ---------- Tools: screen a person ----------
