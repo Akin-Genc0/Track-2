@@ -15,7 +15,7 @@ Argentina|AR|ARG|Argentine,Argentinian
 Armenia|AM|ARM|Armenian
 Aruba|AW|ABW|Aruban
 Australia|AU|AUS|Australian
-Austria|AT|AUT|Austrian
+Austria|AT|AUT|Austrian,Österreich,Oesterreich
 Azerbaijan|AZ|AZE|Azerbaijani,Azeri
 Bahamas|BS|BHS|Bahamian,The Bahamas
 Bahrain|BH|BHR|Bahraini
@@ -52,17 +52,17 @@ Democratic Republic of the Congo|CD|COD|DR Congo,DRC,Congo-Kinshasa,Congo Democr
 Cook Islands|CK|COK|Cook Islander
 Costa Rica|CR|CRI|Costa Rican
 Cote d'Ivoire|CI|CIV|Ivory Coast,Ivorian,Côte d'Ivoire,Cote D'Ivoire
-Croatia|HR|HRV|Croatian,Croat
+Croatia|HR|HRV|Croatian,Croat,Hrvatska
 Cuba|CU|CUB|Cuban
 Curacao|CW|CUW|Curaçao,Curacaoan
 Cyprus|CY|CYP|Cypriot
-Czech Republic|CZ|CZE|Czech,Czechia,Czechoslovakia,Czechoslovak
-Denmark|DK|DNK|Danish,Dane
+Czech Republic|CZ|CZE|Czech,Czechia,Czechoslovakia,Czechoslovak,Česko,Česká republika
+Denmark|DK|DNK|Danish,Dane,Danmark
 Djibouti|DJ|DJI|Djiboutian
 Dominica|DM|DMA|Dominican (Dominica)
 Dominican Republic|DO|DOM|Dominican
 Ecuador|EC|ECU|Ecuadorian,Ecuadorean
-Egypt|EG|EGY|Egyptian
+Egypt|EG|EGY|Egyptian,Misr
 El Salvador|SV|SLV|Salvadoran,Salvadorean
 Equatorial Guinea|GQ|GNQ|Equatoguinean
 Eritrea|ER|ERI|Eritrean
@@ -72,7 +72,7 @@ Ethiopia|ET|ETH|Ethiopian
 Falkland Islands|FK|FLK|Falkland Islander
 Faroe Islands|FO|FRO|Faroese
 Fiji|FJ|FJI|Fijian
-Finland|FI|FIN|Finnish,Finn
+Finland|FI|FIN|Finnish,Finn,Suomi
 France|FR|FRA|French
 French Guiana|GF|GUF|French Guianese
 French Polynesia|PF|PYF|French Polynesian
@@ -82,7 +82,7 @@ Georgia|GE|GEO|Georgian
 Germany|DE|DEU|German,Deutschland
 Ghana|GH|GHA|Ghanaian
 Gibraltar|GI|GIB|Gibraltarian
-Greece|GR|GRC|Greek,Hellenic
+Greece|GR|GRC|Greek,Hellenic,Hellas,Ellada
 Greenland|GL|GRL|Greenlandic
 Grenada|GD|GRD|Grenadian
 Guadeloupe|GP|GLP|Guadeloupean
@@ -95,9 +95,9 @@ Guyana|GY|GUY|Guyanese
 Haiti|HT|HTI|Haitian
 Honduras|HN|HND|Honduran
 Hong Kong|HK|HKG|Hong Konger,Hong Kong SAR,Hong Kong Special Administrative Region of China
-Hungary|HU|HUN|Hungarian
+Hungary|HU|HUN|Hungarian,Magyarország
 Iceland|IS|ISL|Icelandic,Icelander
-India|IN|IND|Indian
+India|IN|IND|Indian,Bharat
 Indonesia|ID|IDN|Indonesian
 Iran|IR|IRN|Iranian,Islamic Republic of Iran,Persia
 Iraq|IQ|IRQ|Iraqi
@@ -106,7 +106,7 @@ Isle of Man|IM|IMN|Manx
 Israel|IL|ISR|Israeli
 Italy|IT|ITA|Italian,Italia
 Jamaica|JM|JAM|Jamaican
-Japan|JP|JPN|Japanese
+Japan|JP|JPN|Japanese,Nippon,Nihon
 Jersey|JE|JEY|
 Jordan|JO|JOR|Jordanian
 Kazakhstan|KZ|KAZ|Kazakh,Kazakhstani
@@ -143,13 +143,13 @@ Monaco|MC|MCO|Monegasque,Monacan
 Mongolia|MN|MNG|Mongolian
 Montenegro|ME|MNE|Montenegrin
 Montserrat|MS|MSR|Montserratian
-Morocco|MA|MAR|Moroccan
+Morocco|MA|MAR|Moroccan,Al-Maghrib,Maroc
 Mozambique|MZ|MOZ|Mozambican
 Myanmar|MM|MMR|Burma,Burmese,Myanmar (Burma)
 Namibia|NA|NAM|Namibian
 Nauru|NR|NRU|Nauruan
 Nepal|NP|NPL|Nepalese,Nepali
-Netherlands|NL|NLD|Dutch,Holland,The Netherlands,Netherlander
+Netherlands|NL|NLD|Dutch,Holland,The Netherlands,Netherlander,Nederland
 New Caledonia|NC|NCL|New Caledonian
 New Zealand|NZ|NZL|New Zealander,Kiwi
 Nicaragua|NI|NIC|Nicaraguan
@@ -158,7 +158,7 @@ Nigeria|NG|NGA|Nigerian
 North Korea|KP|PRK|North Korean,Democratic People's Republic of Korea,DPRK,Korea North,Korea Democratic People's Republic of
 North Macedonia|MK|MKD|Macedonia,Macedonian,North Macedonian
 Northern Mariana Islands|MP|MNP|Northern Marianan
-Norway|NO|NOR|Norwegian
+Norway|NO|NOR|Norwegian,Norge,Noreg
 Oman|OM|OMN|Omani
 Pakistan|PK|PAK|Pakistani
 Palau|PW|PLW|Palauan
@@ -168,13 +168,13 @@ Papua New Guinea|PG|PNG|Papua New Guinean
 Paraguay|PY|PRY|Paraguayan
 Peru|PE|PER|Peruvian
 Philippines|PH|PHL|Filipino,Philippine,The Philippines
-Poland|PL|POL|Polish,Pole
+Poland|PL|POL|Polish,Pole,Polska
 Portugal|PT|PRT|Portuguese
 Puerto Rico|PR|PRI|Puerto Rican
 Qatar|QA|QAT|Qatari
 Reunion|RE|REU|Réunion
 Romania|RO|ROU|Romanian
-Russia|RU|RUS|Russian,Russian Federation,USSR,U.S.S.R.,Soviet Union
+Russia|RU|RUS|Russian,Russian Federation,USSR,U.S.S.R.,Soviet Union,Rossiya,Rossiia
 Rwanda|RW|RWA|Rwandan
 Saint Kitts and Nevis|KN|KNA|Kittitian,St Kitts and Nevis
 Saint Lucia|LC|LCA|Saint Lucian,St Lucia
@@ -182,7 +182,7 @@ Saint Vincent and the Grenadines|VC|VCT|Vincentian,St Vincent and the Grenadines
 Samoa|WS|WSM|Samoan
 San Marino|SM|SMR|Sammarinese
 Sao Tome and Principe|ST|STP|Sao Tomean,São Tomé and Príncipe
-Saudi Arabia|SA|SAU|Saudi,Saudi Arabian
+Saudi Arabia|SA|SAU|Saudi,Saudi Arabian,KSA,Kingdom of Saudi Arabia
 Senegal|SN|SEN|Senegalese
 Serbia|RS|SRB|Serbian,Serb,Yugoslavia,Yugoslav,Serbia and Montenegro
 Seychelles|SC|SYC|Seychellois
@@ -200,8 +200,8 @@ Spain|ES|ESP|Spanish,Spaniard,España
 Sri Lanka|LK|LKA|Sri Lankan
 Sudan|SD|SDN|Sudanese
 Suriname|SR|SUR|Surinamese
-Sweden|SE|SWE|Swedish,Swede
-Switzerland|CH|CHE|Swiss
+Sweden|SE|SWE|Swedish,Swede,Sverige
+Switzerland|CH|CHE|Swiss,Schweiz,Suisse,Svizzera,Confoederatio Helvetica
 Syria|SY|SYR|Syrian,Syrian Arab Republic
 Taiwan|TW|TWN|Taiwanese
 Tajikistan|TJ|TJK|Tajik,Tajikistani
@@ -217,8 +217,8 @@ Turkmenistan|TM|TKM|Turkmen
 Turks and Caicos Islands|TC|TCA|
 Tuvalu|TV|TUV|Tuvaluan
 Uganda|UG|UGA|Ugandan
-Ukraine|UA|UKR|Ukrainian,Crimea
-United Arab Emirates|AE|ARE|Emirati,UAE,U.A.E.
+Ukraine|UA|UKR|Ukrainian,Crimea,Ukraina
+United Arab Emirates|AE|ARE|Emirati,UAE,U.A.E.,the Emirates,Emirates
 United Kingdom|GB|GBR|UK,U.K.,British,Great Britain,Britain,England,Scotland,Wales,Northern Ireland,English,Scottish,Welsh,United Kingdom of Great Britain and Northern Ireland
 United States|US|USA|U.S.,U.S.A.,United States of America,America,American,the United States,the US,the USA
 US Virgin Islands|VI|VIR|Virgin Islands U.S.,U.S. Virgin Islands
@@ -274,6 +274,7 @@ for _st in US_STATES.replace("\n", "").split(","):
 for _st in CA_PROVINCES.replace("\n", "").split(","):
     SUBNATIONAL[_key(_st)] = "Canada"
 SUBNATIONAL_AMBIG = {"georgia": ("Georgia", "United States")}
+LOOKUP["states"] = "United States"           # 'the States' as a whole value only (not in free text: "member states")
 LOOKUP.pop("dominican", None)
 LOOKUP["dominican"] = "Dominican Republic"
 
@@ -284,6 +285,7 @@ def norm_country(value, codes_any_case=False):
     if value is None:
         return None
     v = re.sub(r"\[.*?\]", "", str(value)).strip()
+    v = re.sub(r"\s*\((?:islamic |federal |democratic |people'?s |plurinational |bolivarian |the )?(?:republic|state|kingdom)[^)]*\)", "", v).strip()
     if not v:
         return None
     if v.isupper() and v.strip() in CODES and len(v.strip()) in (2, 3):
@@ -304,7 +306,8 @@ def norm_country(value, codes_any_case=False):
 
 
 # regex for finding country mentions in free text (longest aliases first)
-_text_aliases = sorted((a for a in LOOKUP if len(a) >= 4 or a in ("uk", "usa", "uae", "us")), key=len, reverse=True)
+_text_aliases = sorted((a for a in LOOKUP if (len(a) >= 4 or a in ("uk", "usa", "uae", "us", "ksa", "u s", "u k")) and a not in ("states", "emirates")),
+                       key=len, reverse=True)
 _TEXT_RE = re.compile(r"\b(" + "|".join(re.escape(a) for a in _text_aliases) + r")\b")
 _AMBIG_TEXT = {"us", "georgia", "jersey", "chad", "guinea", "niger", "jordan", "america", "korea"}
 

@@ -136,10 +136,9 @@ class HitFacts:
                     cs = list(SUBNATIONAL_AMBIG.get(last) or [SUBNATIONAL[last]])
                 else:
                     c = norm_country(v.split(",")[-1]) or norm_country(v)
-                    if not c:
-                        cs = countries_in_text(v)
-                        c = cs[-1] if cs else None
-                    cs = [c] if c else []
+                    # the last part decides (policy); if it names no country, every country the value mentions counts
+                    # ('Kenyan/British', 'Lagos Nigeria'), never just the last one found
+                    cs = [c] if c else list(countries_in_text(v))
                 if not cs and _key(v) not in NOT_COUNTRIES:
                     self.unplaced.append(v)
                 for c in cs:

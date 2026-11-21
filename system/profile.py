@@ -11,7 +11,8 @@ APPROVED = {"approved", "passed", "pass", "clear", "cleared", "verified", "succe
 _DOC_RE = re.compile(r"passport|national id|identity card|id card|identity document|driv(?:ing|er'?s?) licen[cs]e|residence permit|registry extract|"
                      r"company registry|registration certificate|certificate of incorporation|document|\bid\b", re.I)
 _VERIFY_RE = re.compile(r"verif|validat|confirm|approv|clear|vet|pass|check|screen|match|authenticat|onboard|kyc|identity", re.I)
-_NEG_RE = re.compile(r"reject|fail|declin|expir|unsuccess|could not|couldn't|unable|not (?:be )?(?:verified|approved|confirmed|validated|accepted)|"
+# 'expired' only: "passport (expires 2031-05-12) ... verified" is an approved check
+_NEG_RE = re.compile(r"reject|fail|declin|\bexpired\b|unsuccess|could not|couldn't|unable|not (?:be )?(?:verified|approved|confirmed|validated|accepted)|"
                      r"did not|didn't|mismatch|denied|invalid|fraudulent|forged|suspicious|refused|void|blurr|illegible|not pass|no longer valid|pending|awaiting|incomplete|"
                      r"\bconsider\b|caution|\brefer(?:red)?\b|flagged|manual review|resubmi|\bon hold\b|review required|not clear", re.I)
 # an outcome word that survives once the negative phrases are removed: with a negative too, the note is ambiguous
@@ -19,6 +20,7 @@ _POS_RE = re.compile(r"\b(?:approved|passed|verified|cleared|successful(?:ly)?|a
 # the note is about someone else on the same email (families share emails): not identity evidence for this person
 _REL_RE = re.compile(r"\b(?:spouse|wife|husband|son|daughter|mother|father|partner|child|children|sibling|brother|sister|guardian|"
                      r"dependa?nt|minor|joint (?:account )?holder|on behalf of)\b", re.I)
+_LIVED_RE = re.compile(r"\b(?:lived|lives|living|resid\w*|based in|employed|works? in|worked in|relocat\w*|moved to)\b", re.I)
 _PARTICLES = {"da", "de", "del", "della", "di", "do", "dos", "das", "du", "van", "von", "der", "den", "ter", "bin", "ibn", "bint",
               "al", "el", "la", "le", "y", "e"}
 TITLES = {"mr", "mrs", "ms", "miss", "mx", "dr", "prof", "sir", "dame", "sheikh", "shaikh", "haji", "hajji", "alhaji", "chief", "eng", "hon", "rev"}
@@ -208,9 +210,12 @@ class Profile:
                     p["name"] = strip_titles(p["name"])
                     checks.append(p)
                     continue
-                for c in countries_in_text(as_text(n.get("text"))):
+                found = countries_in_text(as_text(n.get("text")))
+                for c in found:
                     add(c, nid)
                     self.residence_notes.append((c, nid))
+                if not found and _LIVED_RE.search(as_text(n.get("text"))) and "address on file" not in as_text(n.get("text")).lower():
+                    self.unplaced.append(nid)     # says where they lived or worked, but names no country we know
         # a note with both an approval and a negative word is ambiguous: it never supplies clearing facts, but
         # screen.py re-decides with it counted as approved, and if that stops the clear the hit goes to REVIEW
         self.ambiguous = [c for c in checks if c.get("ambiguous")]
