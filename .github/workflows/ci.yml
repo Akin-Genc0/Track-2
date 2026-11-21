@@ -1,0 +1,20 @@
+name: CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python3 tests/test_policy.py
+      - run: python -m py_compile system/*.py
+      - name: Reproduce development predictions and score
+        run: |
+          python3 tools/xlsx_to_dev.py
+          system/run data/dev output/dev.jsonl
+          python3 tools/score.py output/dev.jsonl data/dev/practice_labels.jsonl -v

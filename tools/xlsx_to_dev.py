@@ -1,7 +1,19 @@
 """Rebuild a dev/ data folder (JSON Lines) from the organisers' browsing workbook.
 The workbook flattens list fields to '; '-joined strings; we split them back to arrays."""
 import json, os, re, sys
-src, dst = sys.argv[1], sys.argv[2]
+# Retain the legacy raw-folder invocation; default to the bundled workbook.
+import tempfile
+from pathlib import Path
+from workbook import extract
+if len(sys.argv) == 1:
+    raw = tempfile.TemporaryDirectory()
+    src = raw.name
+    dst = str(Path(__file__).resolve().parents[1] / "data" / "dev")
+    extract(Path(__file__).resolve().parents[1] / "Screening Dev Set - browse.xlsx", src)
+elif len(sys.argv) == 3:
+    src, dst = sys.argv[1:]
+else:
+    sys.exit("Usage: python3 tools/xlsx_to_dev.py [raw_folder output_folder]")
 os.makedirs(dst, exist_ok=True)
 LISTS = {
     'alerts': ['hit_ids'],
