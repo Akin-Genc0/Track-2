@@ -18,17 +18,72 @@
     SAME_ENTITY: "same",
     REVIEW: "review",
   };
+  // One line per decision on why it is safe to act on.
+  const DECISION_SAFETY = {
+    DIFFERENT_ENTITY: "Cleared only because a fact on file contradicts the hit.",
+    SAME_ENTITY: "Confirmed: the core facts agree and nothing contradicts them.",
+    REVIEW: "Not sure, so a human decides. The system never clears on a guess.",
+  };
+
+  // Fact states the system's reason code asserts. They win over the desk's own
+  // heuristics so the facts strip never contradicts the decision it explains.
+  const CODE_FACTS = {
+    NAME_DOB_LOCATION_MATCH: { name: "agree", dob: "agree", countries: "agree" },
+    NAME_DOB_MATCH: { name: "agree", dob: "agree" },
+    NAME_LOCATION_MATCH: { name: "agree", countries: "agree" },
+    DOB_MISMATCH: { dob: "conflict" },
+    LOCATION_MISMATCH: { countries: "conflict" },
+    NAME_MISMATCH_VERIFIED: { name: "conflict" },
+    ENTITY_TYPE_MISMATCH: { type: "conflict" },
+  };
+
+  const ID_RE = /\b(?:CUS|KYC|NOTE|SR|ACC|APP)-[0-9A-Z]{4,}\b/g;
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
   const state = {
     bundle: null,
+    version: 0,
     importedPreds: null,
     filter: { decision: "ALL", q: "", labeled: false, disagree: false, category: "ALL" },
     selectedId: null,
     selectedCustomer: null,
+    moreFields: false,
+    animateNext: false,
+    queueKey: null,
+    caseKey: null,
     pollTimer: null,
   };
 
   const $ = (id) => document.getElementById(id);
+
+  // Lucide-style icons (24px grid, round caps), drawn inline so the desk stays dependency-free.
+  const ICONS = {
+    check: ["M20 6 9 17l-5-5"],
+    x: ["M18 6 6 18", "m6 6 12 12"],
+    equal: ["M5 9h14", "M5 15h14"],
+    notEqual: ["M5 9h14", "M5 15h14", "M19 5 5 19"],
+    help: ["M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"],
+    chevron: ["m9 18 6-6-6-6"],
+    shield: ["M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z", "m9 12 2 2 4-4"],
+    alert: ["m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3", "M12 9v4", "M12 17h.01"],
+    searchX: ["m13.5 8.5-5 5", "m8.5 8.5 5 5", "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z", "m21 21-4.3-4.3"],
+    file: ["M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z", "M14 2v4a2 2 0 0 0 2 2h4"],
+    users: ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M22 21v-2a4 4 0 0 0-3-3.87", "M16 3.13a4 4 0 0 1 0 7.75"],
+  };
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  function icon(name, cls) {
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("class", "icon" + (cls ? " " + cls : ""));
+    svg.setAttribute("aria-hidden", "true");
+    for (const d of ICONS[name] || []) {
+      const p = document.createElementNS(SVG_NS, "path");
+      p.setAttribute("d", d);
+      svg.appendChild(p);
+    }
+    return svg;
+  }
 
   function el(tag, attrs, ...children) {
     const n = document.createElement(tag);
@@ -189,10 +244,10 @@
     if (!notes) return [];
     const first = String(notes).split(/\n\s*\n/)[0];
     const found = [];
-    const age = first.match(/\b(\d{1,3})-year-old\b|\baged\s+(\d{1,3})\b/i);
+    const age = first.match(/\b(\d{1,3})-year-old\b|\baged\s+(\d{1,3})\b|\bage of\s+(\d{1,3})\b|\b(\d{1,3}) years old\b/i);
     const years = [...first.matchAll(/\b(19|20)\d{2}\b/g)].map((m) => +m[0]);
     if (age && years.length) {
-      const n = +(age[1] || age[2]);
+      const n = +(age[1] || age[2] || age[3] || age[4]);
       if (n >= 10 && n <= 110) {
         const y = years[0];
         found.push({ y: y - n, m: null, d: null, raw: `${y - n} (from age ${n} in ${y})` });
@@ -315,7 +370,7 @@
     }
     counts.pending = counts.total - seen.size;
 
-    let cost = 0, baseline = 0, labeled = 0, unsafe = 0;
+    let cost = 0, baseline = 0, labeled = 0, unsafe = 0, correct = 0;
     let tpDiff = 0, goldDiff = 0, predDiff = 0, tpSame = 0, goldSame = 0;
     const confusion = {};
     const predMap = predictions(bundle);
@@ -327,6 +382,7 @@
       const d = p.decision;
       if (!COST[g] || COST[g][d] == null) continue;
       labeled++;
+      if (g === d) correct++;
       cost += COST[g][d];
       baseline += COST[g].REVIEW;
       confusion[g + ">" + d] = (confusion[g + ">" + d] || 0) + 1;
@@ -349,10 +405,12 @@
       baseline = metaScore.baseline_review_cost;
       decisionScore = metaScore.decision_score;
       unsafe = metaScore.unsafe_clearances;
+      correct = metaScore.correct != null ? metaScore.correct : null;
     }
     return {
       counts,
       labeled,
+      correct,
       cost,
       baseline,
       decisionScore,
@@ -391,15 +449,17 @@
   function buildQueue(bundle) {
     const { filter } = state;
     const q = fold(filter.q);
-    const variants = variantMap(bundle);
     const rows = [];
+    // Counts per decision honour search / labeled / disagree but not the decision filter,
+    // so each chip says how many hits it would show.
+    const counts = { ALL: 0, SAME_ENTITY: 0, DIFFERENT_ENTITY: 0, REVIEW: 0, PENDING: 0, LABELED: 0, DISAGREE: 0 };
     for (const hit of Object.values(bundle.hits)) {
       const pred = predictions(bundle)[hit.hit_id] || null;
       const lab = bundle.labels[hit.hit_id] || null;
       const alert = bundle.alerts[hit.alert_id] || {};
       const decision = pred && pred.decision ? pred.decision : "PENDING";
-      if (filter.decision === "PENDING" && decision !== "PENDING") continue;
-      if (filter.decision !== "ALL" && filter.decision !== "PENDING" && decision !== filter.decision) continue;
+      if (lab) counts.LABELED++;
+      if (lab && pred && lab.decision !== pred.decision) counts.DISAGREE++;
       if (filter.labeled && !lab) continue;
       if (filter.disagree) {
         if (!lab || !pred || lab.decision === pred.decision) continue;
@@ -416,6 +476,9 @@
           .join(" | ");
         if (!hay.includes(q)) continue;
       }
+      counts.ALL++;
+      counts[decision] = (counts[decision] || 0) + 1;
+      if (filter.decision !== "ALL" && decision !== filter.decision) continue;
       const disagree = !!(lab && pred && lab.decision !== pred.decision);
       rows.push({ hit, pred, lab, alert, decision, disagree, cat: categoryOf(hit) });
     }
@@ -427,6 +490,7 @@
       if (ra !== rb) return ra - rb;
       return (b.hit.match_score || 0) - (a.hit.match_score || 0);
     });
+    rows.counts = counts;
     return rows;
   }
 
@@ -435,25 +499,34 @@
     return `${(x * 100).toFixed(1)}%`;
   }
 
+  // One beat on a number that just changed: it tells you the filter worked.
+  function pulse(node) {
+    if (!node || !node.animate) return;
+    const frames = reduceMotion.matches
+      ? [{ opacity: 0.4 }, { opacity: 1 }]
+      : [{ transform: "scale(1.12)" }, { transform: "scale(1)" }];
+    node.animate(frames, { duration: 200, easing: "cubic-bezier(0.23, 1, 0.32, 1)" });
+  }
+
   function renderStats(bundle) {
     const s = computeStats(bundle);
     const c = s.counts;
     const scoreTitle = s.sample
-      ? "Decision score on the 50 practice labels (sample predictions copy those labels, so this will read 100% until real output is loaded)"
-      : "Decision score on practice labels: share of review-baseline cost saved";
+      ? "Practice labels answered correctly (sample predictions copy those labels, so this reads 100% until real output is loaded)"
+      : `Practice labels answered correctly. Decision score ${fmtPct(s.decisionScore)} of review-baseline cost saved.`;
+    const stat = (cls, k, v, sub, title) =>
+      el("div", { class: "stat " + cls, title },
+        el("div", { class: "k" }, k),
+        el("div", { class: "v" }, cls.includes("safe") ? icon("shield", "stat-icon") : null, v, sub ? el("em", null, sub) : null));
+    const unsafeCls = s.labeled ? (s.unsafe ? "danger" : "safe") : "";
     $("stats").replaceChildren(
-      el("div", { class: "stat" }, el("div", { class: "k" }, "Hits"), el("div", { class: "v" }, String(c.total), el("em", null, `${c.pending} pending`))),
-      el("div", { class: "stat cleared" }, el("div", { class: "k" }, "Cleared"), el("div", { class: "v" }, String(c.DIFFERENT_ENTITY))),
-      el("div", { class: "stat match" }, el("div", { class: "k" }, "True match"), el("div", { class: "v" }, String(c.SAME_ENTITY))),
-      el("div", { class: "stat review" }, el("div", { class: "k" }, "Review"), el("div", { class: "v" }, String(c.REVIEW))),
-      el("div", { class: "stat score", title: scoreTitle },
-        el("div", { class: "k" }, "Practice score"),
-        el("div", { class: "v" }, s.decisionScore == null ? "—" : fmtPct(s.decisionScore), el("em", null, s.labeled ? (s.labeled + " labeled") : "no labels"))
-      ),
-      el("div", { class: "stat" + (s.unsafe ? " danger" : ""), title: "Predicted DIFFERENT_ENTITY when the label is SAME_ENTITY or REVIEW" },
-        el("div", { class: "k" }, "Unsafe clears"),
-        el("div", { class: "v" }, s.labeled ? String(s.unsafe) : "—")
-      ),
+      stat("total", "Hits", String(c.total), c.pending ? `${c.pending} pending` : null),
+      stat("cleared", "Cleared", String(c.DIFFERENT_ENTITY), null, "Decided DIFFERENT_ENTITY"),
+      stat("match", "True match", String(c.SAME_ENTITY), null, "Decided SAME_ENTITY"),
+      stat("review", "Review", String(c.REVIEW), fmtPct(s.reviewRate).replace(".0%", "%"), "Sent to a human (REVIEW) because nothing settles it"),
+      stat("score", "Practice", s.labeled && s.correct != null ? `${s.correct}/${s.labeled}` : "—", s.labeled ? "correct" : "no labels", scoreTitle),
+      stat(unsafeCls, "Unsafe clears", s.labeled ? String(s.unsafe) : "—", s.labeled ? "unsure → Review" : null,
+        "Cleared (DIFFERENT_ENTITY) when the practice label is SAME_ENTITY or REVIEW. Each costs 60, so the system sends anything unsure to REVIEW."),
     );
     const live = !s.sample && Object.keys(predictions(bundle)).length;
     const pill = $("mode-pill");
@@ -465,76 +538,133 @@
     document.body.classList.toggle("has-banner", showBanner);
   }
 
-  function renderFilters() {
+  const CHIPS = [
+    ["ALL", "All", "", "1"],
+    ["DIFFERENT_ENTITY", "Cleared", "cleared", "2"],
+    ["SAME_ENTITY", "True match", "match", "3"],
+    ["REVIEW", "Review", "review", "4"],
+    ["PENDING", "Pending", "", ""],
+    ["LABELED", "Labeled", "", "L"],
+    ["DISAGREE", "Disagrees", "", "D"],
+  ];
+
+  function renderFilters(counts) {
     const f = state.filter;
-    const chips = [
-      ["ALL", "All", ""],
-      ["DIFFERENT_ENTITY", "Cleared", "cleared"],
-      ["SAME_ENTITY", "True match", "match"],
-      ["REVIEW", "Review", "review"],
-      ["PENDING", "Pending", ""],
-      ["LABELED", "Labeled", ""],
-      ["DISAGREE", "Disagrees", ""],
-    ];
+    const prev = state.prevCounts;
     const box = $("filters");
     box.replaceChildren();
-    for (const [key, label, cls] of chips) {
+    const changed = [];
+    for (const [key, label, cls, shortcut] of CHIPS) {
+      // Pending and Disagrees only earn a chip when they have something in them.
+      if (key === "PENDING" && !counts.PENDING && f.decision !== "PENDING") continue;
+      if (key === "DISAGREE" && !counts.DISAGREE && !f.disagree) continue;
       let on = false;
       if (key === "LABELED") on = f.labeled;
       else if (key === "DISAGREE") on = f.disagree;
       else on = f.decision === key;
+      const n = counts[key];
+      const num = n != null ? el("span", { class: "n" }, String(n)) : null;
+      if (num && prev && prev[key] !== n) changed.push(num);
       box.appendChild(
         el("button", {
           type: "button",
           class: "chip" + (on ? " on" : "") + (cls ? " " + cls : ""),
+          "aria-pressed": on ? "true" : "false",
+          title: shortcut ? `Shortcut: ${shortcut}` : null,
           onclick: () => {
             if (key === "LABELED") f.labeled = !f.labeled;
             else if (key === "DISAGREE") f.disagree = !f.disagree;
             else f.decision = key;
             render();
           },
-        }, label)
+        }, label, num)
       );
     }
+    state.prevCounts = { ...counts };
+    if (prev) changed.forEach(pulse);
+  }
+
+  function queueItem(row) {
+    const cls = DECISION_CLASS[row.decision] || "pending";
+    const id = row.hit.hit_id;
+    const code = row.pred && row.pred.reason_code;
+    return el(
+      "div",
+      {
+        class: "queue-item" + (id === state.selectedId ? " on" : ""),
+        id: "q-" + id,
+        role: "option",
+        "aria-selected": id === state.selectedId ? "true" : "false",
+        onclick: () => selectHit(id, null, { animate: true }),
+      },
+      el("div", null,
+        el("div", { class: "q-name" }, row.hit.name || "Unnamed"),
+        el("div", { class: "q-sub" },
+          el("span", null, id),
+          el("span", { class: "cat" }, code || row.cat)
+        )
+      ),
+      el("div", { class: "q-right" },
+        el("span", { class: "mini " + cls }, row.decision === "PENDING" ? "Pending" : DECISION_LABEL[row.decision] || row.decision),
+        row.lab ? el("span", { class: "flag" + (row.disagree ? " bad" : "") }, row.disagree ? icon("alert") : null, row.disagree ? "Label differs" : "Labeled") : null
+      )
+    );
   }
 
   function renderQueue(rows) {
-    $("queue-meta").textContent = `${rows.length} in queue`;
+    const meta = $("queue-meta");
+    meta.replaceChildren(el("span", { class: "num" }, String(rows.length)), ` ${rows.length === 1 ? "hit" : "hits"} in queue`);
+    if (state.queueLen != null && state.queueLen !== rows.length) pulse(meta.firstChild);
+    state.queueLen = rows.length;
     const box = $("queue");
     box.replaceChildren();
-    for (const row of rows) {
-      const cls = DECISION_CLASS[row.decision] || "pending";
-      const item = el(
-        "div",
-        {
-          class: "queue-item" + (row.hit.hit_id === state.selectedId ? " on" : ""),
-          role: "option",
-          "aria-selected": row.hit.hit_id === state.selectedId ? "true" : "false",
-          onclick: () => selectHit(row.hit.hit_id),
-        },
-        el("div", { class: "q-bar " + cls }),
-        el("div", null,
-          el("div", { class: "q-name" }, row.hit.name || "Unnamed"),
-          el("div", { class: "q-sub" },
-            el("span", null, row.hit.hit_id),
-            el("span", { class: "cat" }, row.cat)
-          )
-        ),
-        el("div", { class: "q-right" },
-          el("span", { class: "mini " + cls }, row.decision === "PENDING" ? "Pending" : DECISION_LABEL[row.decision] || row.decision),
-          row.lab ? el("span", { class: "flag" + (row.disagree ? " bad" : "") }, row.disagree ? "Label differs" : "Labeled") : null,
-          el("span", { class: "q-score" }, row.hit.match_score != null ? String(row.hit.match_score) : "")
-        )
-      );
-      box.appendChild(item);
+    if (!rows.length) {
+      const f = state.filter;
+      box.appendChild(el("div", { class: "queue-empty" },
+        icon("searchX", "qe-icon"),
+        el("div", { class: "qe-title" }, "No hits match"),
+        el("div", { class: "qe-sub" }, f.q ? `Nothing matches “${f.q}” with these filters.` : "Nothing matches these filters."),
+        el("button", {
+          type: "button",
+          class: "btn",
+          onclick: () => {
+            Object.assign(state.filter, { decision: "ALL", q: "", labeled: false, disagree: false });
+            $("q").value = "";
+            render();
+          },
+        }, "Clear search and filters")
+      ));
+      return;
     }
-    const on = box.querySelector(".queue-item.on");
-    if (on) on.scrollIntoView({ block: "nearest" });
+    const frag = document.createDocumentFragment();
+    for (const row of rows) frag.appendChild(queueItem(row));
+    box.appendChild(frag);
+    syncQueueSelection();
   }
 
-  function selectHit(id, customerId) {
+  function syncQueueSelection() {
+    const box = $("queue");
+    const prev = box.querySelector(".queue-item.on");
+    const next = state.selectedId ? document.getElementById("q-" + state.selectedId) : null;
+    if (prev && prev !== next) {
+      prev.classList.remove("on");
+      prev.setAttribute("aria-selected", "false");
+    }
+    if (next) {
+      next.classList.add("on");
+      next.setAttribute("aria-selected", "true");
+      box.setAttribute("aria-activedescendant", next.id);
+      next.scrollIntoView({ block: "nearest" });
+    } else {
+      box.removeAttribute("aria-activedescendant");
+    }
+  }
+
+  function selectHit(id, customerId, opts) {
     state.selectedId = id;
     state.selectedCustomer = customerId || null;
+    // Motion is for pointer selection only: J/K is a hundreds-a-day action and swaps instantly.
+    state.animateNext = !!(opts && opts.animate);
     if (id && location.hash !== "#" + id) {
       history.replaceState(null, "", "#" + id);
     }
@@ -565,11 +695,11 @@
     return countrySet(vals, lookup, notCountries);
   }
 
-  function displayList(items, empty = "—") {
+  function displayList(items, empty = "Not on file") {
     const arr = asList(items);
     if (!arr.length) return el("span", { class: "missing" }, empty);
-    if (arr.length === 1) return document.createTextNode(String(arr[0]));
-    return el("ul", { class: "val-list" }, ...arr.map((x) => el("li", null, String(x))));
+    if (arr.length === 1) return linkText(String(arr[0]));
+    return el("ul", { class: "val-list" }, ...arr.map((x) => el("li", null, linkText(String(x)))));
   }
 
   function compareRows(cust, hit, kyc, alert, bundle, noteIds) {
@@ -627,21 +757,32 @@
     const hNat = countrySet([...asList(hit.nationality), ...asList(hit.citizenship)], lookup, notCountries);
     const natSt = setStatus(cNat, hNat);
 
+    const firstOf = (set) => (set.size ? [...set].join(", ") : null);
+    const custName = (kyc && kyc.verified_name) || (cust && cust.full_name) || (alert && alert.customer_name) || null;
+    const custDobBrief = custDobsForStatus.length ? (fmtDate(parseDate(custDobsForStatus[0])) || custDobsForStatus[0]) : null;
+    const hitDobBrief = hitDobs.length
+      ? [...new Set(hitDobs.map((d) => fmtDate(parseDate(d)) || d))].join(", ")
+      : (noteDobs.length ? `≈${noteDobs[0].y} (from notes)` : null);
+
     function showDates(arr) {
       const parsed = arr.map(parseDate).filter(Boolean);
-      if (!parsed.length) return el("span", { class: "missing" }, "Not given");
+      if (!parsed.length) return el("span", { class: "missing" }, "Not on file");
       const uniq = [...new Set(parsed.map(fmtDate))];
       return displayList(uniq);
     }
 
     const rows = [
       {
+        key: "type",
+        brief: [cType, hType],
         label: "Entity type",
-        left: cType || el("span", { class: "missing" }, "Not given"),
-        right: hType || el("span", { class: "missing" }, "Not given"),
+        left: cType || el("span", { class: "missing" }, "Not on file"),
+        right: hType || el("span", { class: "missing" }, "Not on file"),
         status: typeSt,
       },
       {
+        key: "name",
+        brief: [custName, hit.name || null],
         label: "Name",
         left: displayList(
           [
@@ -655,74 +796,116 @@
         status: nameCmp.status,
       },
       {
+        key: "dob",
+        brief: [custDobBrief, hitDobBrief],
         label: "Date of birth",
-        left: custDobs.length ? displayList(custDobs) : el("span", { class: "missing" }, "Not given"),
+        left: custDobs.length ? displayList(custDobs) : el("span", { class: "missing" }, "Not on file"),
         right: hitDobs.length
           ? showDates(hitDobs)
           : (noteDobs.length
             ? displayList(noteDobs.map((p) => p.raw))
-            : el("span", { class: "missing" }, "Not given")),
+            : el("span", { class: "missing" }, "Not on file")),
         status: dobSt,
       },
       {
+        key: "nationality",
         label: "Nationality",
-        left: cNat.size ? displayList([...cNat]) : el("span", { class: "missing" }, "Not given"),
-        right: hNat.size ? displayList([...hNat]) : el("span", { class: "missing" }, "Not given"),
+        left: cNat.size ? displayList([...cNat]) : el("span", { class: "missing" }, "Not on file"),
+        right: hNat.size ? displayList([...hNat]) : el("span", { class: "missing" }, "Not on file"),
         status: natSt,
       },
       {
+        key: "countries",
+        brief: [firstOf(cCountries), firstOf(hCountries)],
         label: "Countries",
-        left: cCountries.size ? displayList([...cCountries]) : el("span", { class: "missing" }, "Not given"),
-        right: hCountries.size ? displayList([...hCountries]) : el("span", { class: "missing" }, "Not given"),
+        left: cCountries.size ? displayList([...cCountries]) : el("span", { class: "missing" }, "Not on file"),
+        right: hCountries.size ? displayList([...hCountries]) : el("span", { class: "missing" }, "Not on file"),
         status: locSt,
       },
       {
+        key: "address",
+        weak: true,
         label: "City / address",
-        left: displayList([cust && cust.city, cust && cust.address, alert && alert.city].filter(Boolean), "Not given"),
-        right: displayList(hit.addresses, "Not given"),
+        left: displayList([cust && cust.city, cust && cust.address, alert && alert.city].filter(Boolean), "Not on file"),
+        right: displayList(hit.addresses, "Not on file"),
         status: "unknown",
       },
       {
+        key: "ids",
+        weak: true,
         label: "Identifiers",
-        left: displayList([cust && cust.registration_number, kyc && kyc.document_type && kyc.document_number ? `${kyc.document_type} ${kyc.document_number}` : null].filter(Boolean), "Not given"),
-        right: displayList(hit.identifiers, "Not given"),
+        left: displayList([cust && cust.registration_number, kyc && kyc.document_type && kyc.document_number ? `${kyc.document_type} ${kyc.document_number}` : null].filter(Boolean), "Not on file"),
+        right: displayList(hit.identifiers, "Not on file"),
         status: "unknown",
       },
       {
+        key: "occupation",
+        weak: true,
         label: "Occupation",
-        left: displayList([cust && cust.occupation, cust && cust.employer].filter(Boolean), "Not given"),
-        right: displayList([hit.position_or_allegation].filter(Boolean), "Not given"),
+        left: displayList([cust && cust.occupation, cust && cust.employer].filter(Boolean), "Not on file"),
+        right: displayList([hit.position_or_allegation].filter(Boolean), "Not on file"),
         status: "unknown",
       },
       {
+        key: "life",
+        weak: true,
         label: "Life status",
-        left: el("span", { class: "missing" }, "—"),
-        right: displayList([hit.life_status, hit.deceased_date && `Deceased ${hit.deceased_date}`].filter(Boolean), "Not given"),
+        left: el("span", { class: "missing" }, "Not on file"),
+        right: displayList([hit.life_status, hit.deceased_date && `Deceased ${hit.deceased_date}`].filter(Boolean), "Not on file"),
         status: hit.deceased_date ? "conflict" : "unknown",
       },
       {
+        key: "gender",
+        weak: true,
         label: "Gender",
-        left: el("span", { class: "missing" }, "—"),
-        right: hit.gender || el("span", { class: "missing" }, "Not given"),
+        left: el("span", { class: "missing" }, "Not on file"),
+        right: hit.gender || el("span", { class: "missing" }, "Not on file"),
         status: "unknown",
       },
     ];
     return rows;
   }
 
-  function highlightReason(text, evidence) {
+  // Turns every record ID in a string into a button that jumps to its evidence card.
+  function linkText(str) {
+    const raw = String(str);
+    ID_RE.lastIndex = 0;
+    if (!ID_RE.test(raw)) return document.createTextNode(raw);
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    ID_RE.lastIndex = 0;
+    for (const m of raw.matchAll(ID_RE)) {
+      if (m.index > last) frag.appendChild(document.createTextNode(raw.slice(last, m.index)));
+      frag.appendChild(idButton(m[0]));
+      last = m.index + m[0].length;
+    }
+    if (last < raw.length) frag.appendChild(document.createTextNode(raw.slice(last)));
+    return frag;
+  }
+
+  function idButton(id) {
+    return el("button", {
+      type: "button",
+      class: "idchip",
+      title: `Show source record ${id}`,
+      onclick: (e) => { e.stopPropagation(); focusEvidence(id); },
+    }, id);
+  }
+
+  function focusEvidence(id) {
+    const card = document.getElementById("ev-" + id);
+    if (!card) return;
+    card.scrollIntoView({ behavior: reduceMotion.matches ? "auto" : "smooth", block: "center" });
+    card.focus({ preventScroll: true });
+    card.classList.remove("flash");
+    void card.offsetWidth; // restart the one-shot ring
+    card.classList.add("flash");
+  }
+
+  function highlightReason(text) {
     const raw = String(text || "").trim() || "No reason text.";
-    const ids = (evidence || []).slice().sort((a, b) => b.length - a.length);
     const wrap = el("div", { class: "reason-text" });
-    if (!ids.length) {
-      wrap.textContent = raw;
-      return wrap;
-    }
-    const re = new RegExp("(" + ids.map((i) => i.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")");
-    for (const part of raw.split(re)) {
-      if (ids.includes(part)) wrap.appendChild(el("span", { class: "idchip" }, part));
-      else wrap.appendChild(document.createTextNode(part));
-    }
+    wrap.appendChild(linkText(raw));
     return wrap;
   }
 
@@ -758,7 +941,7 @@
 
   function evidenceCard(id, bundle, cited) {
     const found = findRecord(id, bundle);
-    const card = el("div", { class: "ev-card" + (cited ? " cited" : "") });
+    const card = el("div", { class: "ev-card" + (cited ? " cited" : ""), id: "ev-" + id, tabindex: "-1" });
     if (!found) {
       card.append(
         el("div", { class: "ev-top" }, el("div", { class: "ev-id" }, id), el("div", { class: "ev-kind" }, "Not in bundle"))
@@ -809,16 +992,41 @@
     return card;
   }
 
+  const STATE_WORD = { agree: "Match", conflict: "Contradicts", unknown: "Unknown" };
+  const STATE_ICON = { agree: "equal", conflict: "notEqual", unknown: "help" };
+  const ROW_ORDER = ["name", "dob", "countries", "type", "nationality", "life", "address", "ids", "occupation", "gender"];
+
+  function stateMark(status) {
+    return el("span", { class: "state " + status },
+      icon(STATE_ICON[status] || "help"),
+      el("span", { class: "w" }, STATE_WORD[status] || status));
+  }
+
+  function factTile(label, row, decides) {
+    const st = row ? row.status : "unknown";
+    const [c, l] = (row && row.brief) || [null, null];
+    const side = (k, v) => el("div", { class: "ft-side" },
+      el("span", { class: "ft-k" }, k),
+      v ? el("span", { class: "ft-v", title: v }, v) : el("span", { class: "ft-v missing" }, "Not on file"));
+    return el("div", { class: "fact-tile " + st + (decides ? " decides" : "") },
+      el("div", { class: "ft-top" }, el("span", { class: "ft-label" }, label), stateMark(st)),
+      side("Customer", c),
+      side("List entry", l),
+      decides ? el("div", { class: "ft-decides" }, "Deciding fact") : null);
+  }
+
+  function emptyStage(title, sub) {
+    return el("div", { class: "empty", id: "empty" },
+      el("div", { class: "empty-title" }, title),
+      el("div", { class: "empty-sub" }, ...sub));
+  }
+
   function renderCase(bundle) {
     const stage = $("stage");
     const hit = bundle.hits[state.selectedId];
+    const animate = state.animateNext;
     if (!hit) {
-      stage.replaceChildren(
-        el("div", { class: "empty", id: "empty" },
-          el("div", { class: "empty-title" }, "Select a hit"),
-          el("div", { class: "empty-sub" }, "Use the queue, or press J / K to move.")
-        )
-      );
+      stage.replaceChildren(emptyStage("Select a hit", ["Pick one from the queue, or press ", el("kbd", null, "J"), " / ", el("kbd", null, "K"), "."]));
       return;
     }
     const pred = predictions(bundle)[hit.hit_id] || null;
@@ -862,17 +1070,40 @@
     });
     const kyc = latestApprovedKyc(personKyc.length ? personKyc : cse.kyc_ids, bundle);
 
-    const head = el("div", { class: "case-head" },
+    // Comparison rows, with the facts the reason code asserts taking precedence.
+    const noteIdsForCompare = [];
+    const custEmail = fold(cust && cust.email);
+    for (const nid of asList(cse.note_ids)) {
+      const n = bundle.notes[nid];
+      if (n && custEmail && fold(n.requester_email) === custEmail) noteIdsForCompare.push(nid);
+    }
+    for (const id of asList(pred && pred.evidence)) {
+      if (String(id).startsWith("NOTE-") && !noteIdsForCompare.includes(id)) noteIdsForCompare.push(id);
+    }
+    const rows = compareRows(cust, hit, kyc, alert, bundle, noteIdsForCompare);
+    const asserted = CODE_FACTS[reasonCode] || {};
+    for (const r of rows) {
+      const want = asserted[r.key];
+      if (!want) continue;
+      // The desk's own parser can miss a value the system read (e.g. a birth year in prose);
+      // say where it came from rather than drawing the deciding fact as unknown.
+      if (r.brief) r.brief = r.brief.map((v) => v || "Stated in reason");
+      r.status = want;
+    }
+    rows.sort((a, b) => ROW_ORDER.indexOf(a.key) - ROW_ORDER.indexOf(b.key));
+    const byKey = Object.fromEntries(rows.map((r) => [r.key, r]));
+
+    const head = el("header", { class: "case-head" },
       el("div", null,
         el("div", { class: "ids" },
-          el("span", null, el("b", null, "HIT"), hit.hit_id),
-          el("span", null, el("b", null, "ALERT"), hit.alert_id),
-          alert.screened_at ? el("span", null, el("b", null, "SCREENED"), alert.screened_at) : null,
-          hit.match_score != null ? el("span", null, el("b", null, "SCORE"), String(hit.match_score)) : null
+          el("span", null, el("b", null, "Hit"), hit.hit_id),
+          el("span", null, el("b", null, "Alert"), hit.alert_id),
+          alert.screened_at ? el("span", null, el("b", null, "Screened"), alert.screened_at) : null,
+          hit.match_score != null ? el("span", null, el("b", null, "Score"), String(hit.match_score)) : null
         ),
-        el("div", { class: "case-title" },
+        el("h1", { class: "case-title" },
           hit.name || "Unnamed list entry",
-          el("small", null, "Screened customer: " + (alert.customer_name || "Unknown"))
+          el("small", null, "Screened customer: ", el("b", null, alert.customer_name || "Unknown"))
         ),
         el("div", { class: "badges" },
           ...asList(hit.categories).map((c) => {
@@ -884,14 +1115,47 @@
           hit.gender ? el("span", { class: "badge" }, hit.gender) : null
         )
       ),
-      el("div", { class: "stamp " + dcls },
+      el("div", { class: "stamp " + dcls, role: "status", "aria-label": `Decision ${decision}, reason code ${reasonCode || "none"}` },
         el("div", { class: "s-k" }, "Decision"),
         el("div", { class: "s-v" }, decision === "PENDING" ? "Pending" : DECISION_LABEL[decision] || decision),
+        el("div", { class: "s-d" }, decision === "PENDING" ? "No prediction yet" : decision),
         el("div", { class: "s-c" }, reasonCode || "No reason code")
       )
     );
 
-    const parts = [head];
+    const facts = el("section", { class: "facts", "aria-label": "Deciding facts" },
+      factTile("Date of birth", byKey.dob, asserted.dob),
+      factTile("Country", byKey.countries, asserted.countries),
+      factTile("Name", byKey.name, asserted.name),
+      factTile("Entity type", byKey.type, asserted.type)
+    );
+
+    const parts = [head, facts];
+
+    // Reason: the system's own words, its rule, its safety line and the records it cites.
+    const cited = [...asList(pred && pred.evidence)];
+    const reasonWrap = el("section", { class: "reason-block" },
+      el("h3", null, "Reason", reasonCode ? el("span", { class: "code" }, reasonCode) : null),
+      highlightReason(pred && pred.reason),
+      codeMeta ? el("div", { class: "reason-rule" }, el("b", null, "Rule  "), codeMeta.when) : null,
+      cited.length
+        ? el("div", { class: "cited-row" },
+          el("span", { class: "cited-k" }, `Cited records (${cited.length})`),
+          ...cited.map((id) => {
+            const f = findRecord(id, bundle);
+            return el("button", {
+              type: "button",
+              class: "cite",
+              title: `Jump to ${id}`,
+              onclick: () => focusEvidence(id),
+            }, el("span", { class: "cite-id" }, id), f ? el("span", { class: "cite-kind" }, f.kind) : null);
+          }))
+        : null,
+      DECISION_SAFETY[decision]
+        ? el("div", { class: "safety " + dcls }, icon(decision === "REVIEW" ? "users" : "shield"), DECISION_SAFETY[decision])
+        : null
+    );
+    parts.push(reasonWrap);
 
     if (pred && isSample(bundle, pred) && pred._sample_source === "practice_labels") {
       parts.push(el("div", { class: "label-row" },
@@ -901,52 +1165,32 @@
 
     if (lab) {
       const disagree = pred && pred.decision && pred.decision !== lab.decision;
-      const row = el("div", { class: "label-row " + (pred && pred.decision ? (disagree ? "disagree" : "agree") : "") },
+      parts.push(el("div", { class: "label-row " + (pred && pred.decision ? (disagree ? "disagree" : "agree") : "") },
+        pred && pred.decision ? el("span", { class: "lab-icon" }, icon(disagree ? "x" : "check")) : null,
         el("div", null, el("div", { class: "lab-k" }, "Practice label"), `${DECISION_LABEL[lab.decision] || lab.decision}  ·  ${(lab.reason_codes || []).join(", ")}`),
         pred && pred.decision
-          ? el("div", null, el("div", { class: "lab-k" }, disagree ? "Disagrees with system" : "Agrees with system"), `${DECISION_LABEL[pred.decision]}  ·  ${pred.reason_code || ""}`)
+          ? el("div", null, el("div", { class: "lab-k" }, disagree ? "System disagrees" : "System agrees"), `${DECISION_LABEL[pred.decision]}  ·  ${pred.reason_code || ""}`)
           : el("div", null, el("div", { class: "lab-k" }, "System"), "No prediction yet")
-      );
-      parts.push(row);
+      ));
     }
 
     if (uniqueCust.length > 1) {
       parts.push(el("div", { class: "person-switch" },
-        el("span", { style: "color:var(--text-faint);font-size:11px;letter-spacing:.1em;text-transform:uppercase;align-self:center" }, "Customer record"),
+        el("span", { class: "ps-k" }, `${uniqueCust.length} customer records fit`),
         ...uniqueCust.map((id) => {
           const c = bundle.customers[id];
           return el("button", {
             type: "button",
             class: id === state.selectedCustomer ? "on" : "",
+            "aria-pressed": id === state.selectedCustomer ? "true" : "false",
             onclick: () => { state.selectedCustomer = id; render(); },
           }, `${id} · ${c && c.full_name ? c.full_name : "record"}`);
         })
       ));
     }
 
-    const reasonWrap = el("div", { class: "reason-block" },
-      el("h3", null, "Reason" + (codeMeta ? `  ·  ${reasonCode}` : "")),
-      highlightReason(pred && pred.reason, pred && pred.evidence),
-      codeMeta ? el("div", { style: "margin-top:10px;color:var(--text-dim);font-size:12px" }, codeMeta.when) : null,
-      pred && pred.customer_record_id
-        ? el("div", { style: "margin-top:8px;font-family:var(--mono);font-size:12px;color:var(--text-dim)" }, "Resolved customer record: " + String(pred.customer_record_id))
-        : null
-    );
-    parts.push(reasonWrap);
-
-    // Comparison table (paper)
-    const noteIdsForCompare = [];
-    const custEmail = fold(cust && cust.email);
-    for (const nid of asList(cse.note_ids)) {
-      const n = bundle.notes[nid];
-      if (n && custEmail && fold(n.requester_email) === custEmail) noteIdsForCompare.push(nid);
-    }
-    for (const id of asList(pred && pred.evidence)) {
-      if (String(id).startsWith("NOTE-") && !noteIdsForCompare.includes(id)) noteIdsForCompare.push(id);
-    }
-    const rows = compareRows(cust, hit, kyc, alert, bundle, noteIdsForCompare);
-    const grid = el("div", { class: "compare" });
-    const table = el("div", null);
+    // Side-by-side comparison
+    const table = el("div", { class: "compare" });
     const screenedBits = [
       alert.customer_name && `Name ${alert.customer_name}`,
       alert.dob && `DOB ${alert.dob}`,
@@ -957,96 +1201,105 @@
       alert.email && `Email ${alert.email}`,
     ].filter(Boolean);
     table.appendChild(el("div", { class: "screened" },
-      el("b", null, "As screened.  "),
+      el("b", null, "As screened  "),
       screenedBits.join("  ·  ") || "No screened identity fields."
     ));
-    const header = el("div", { class: "field-grid" },
+    table.appendChild(el("div", { class: "field-grid head" },
       el("div", { class: "fh" }, "Field"),
-      el("div", { class: "fh" }, "Customer" + (cust ? `  ·  ${cust.record_id}` : "  ·  unresolved")),
+      el("div", { class: "fh" }, "Customer  ·  ", cust ? linkText(cust.record_id) : "unresolved"),
       el("div", { class: "fh" }, "List entry  ·  " + hit.hit_id),
       el("div", { class: "fh status" }, "Compare")
+    ));
+    const line = (r) => el("div", { class: "field-grid row-" + r.status },
+      el("div", { class: "fcell lab" }, r.label),
+      el("div", { class: "fcell val" }, r.left),
+      el("div", { class: "fcell val" }, r.right),
+      el("div", { class: "fcell status" }, stateMark(r.status))
     );
-    table.appendChild(header);
-    const statusWord = { agree: "Agree", conflict: "Conflict", unknown: "—" };
-    for (const r of rows) {
-      const line = el("div", { class: "field-grid row-" + r.status },
-        el("div", { class: "fcell lab" }, r.label),
-        el("div", { class: "fcell val" }, r.left),
-        el("div", { class: "fcell val" }, r.right),
-        el("div", { class: "fcell status" }, el("div", { class: "status-pill " + r.status }, statusWord[r.status] || r.status))
-      );
-      table.appendChild(line);
+    const strong = rows.filter((r) => !r.weak || r.status !== "unknown");
+    const weak = rows.filter((r) => r.weak && r.status === "unknown");
+    strong.forEach((r) => table.appendChild(line(r)));
+    if (weak.length) {
+      const more = el("details", { class: "more", open: state.moreFields || null },
+        el("summary", null, icon("chevron", "more-chev"), `${weak.length} more fields`, el("span", { class: "more-hint" }, weak.map((r) => r.label.toLowerCase()).join(", "))),
+        ...weak.map(line));
+      more.addEventListener("toggle", () => { state.moreFields = more.open; });
+      table.appendChild(more);
     }
-    grid.appendChild(table);
-    parts.push(el("div", { style: "margin: 4px 0 6px; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-faint)" }, "Side-by-side comparison"), grid);
+
+    parts.push(el("div", { class: "section-k" },
+      el("span", null, "Side by side"),
+      el("span", { class: "legend" },
+        stateMark("agree"), stateMark("conflict"), stateMark("unknown"),
+        el("span", { class: "legend-note" }, "A missing fact stays unknown; it is never scored as a mismatch.")
+      )
+    ), table);
 
     if (kyc) {
-      parts.push(el("div", { style: "margin:-8px 0 16px; font-size:12px; color:var(--text-dim)" },
-        `Verified identity from approved check ${kyc.check_id} (${kyc.checked_at || "undated"}): ${kyc.verified_name || "—"}, ${kyc.verified_dob || "no DOB"}, document country ${kyc.document_country || "—"}.`
+      parts.push(el("div", { class: "foot-note" },
+        "Verified identity from approved check ", linkText(kyc.check_id), ` (${kyc.checked_at || "undated"}): ${kyc.verified_name || "no name"}, ${kyc.verified_dob || "no DOB"}, document country ${kyc.document_country || "not recorded"}.`
       ));
     } else if (!cust) {
-      parts.push(el("div", { style: "margin:-8px 0 16px; font-size:12px; color:var(--text-dim)" },
-        "No customer record is resolved for this alert in the review bundle. The left column uses screened details only."
+      parts.push(el("div", { class: "foot-note" },
+        "No customer record is resolved for this alert in the review bundle. The customer column uses screened details only."
       ));
     }
 
-    // Evidence
-    const cited = [...asList(pred && pred.evidence)];
-    if (lab) {
-      for (const id of asList(lab.evidence)) if (!cited.includes(id)) { /* keep cited as prediction's; we'll still show label evidence */ }
-    }
+    // Evidence: cited first, then IDs the reason mentions, then the rest of the case file.
     const evIds = [];
-    const addEv = (id, force) => {
+    const addEv = (id) => {
       if (!id || evIds.includes(id)) return;
       evIds.push(id);
     };
-    cited.forEach((id) => addEv(id));
-    asList(lab && lab.evidence).forEach((id) => addEv(id));
-    asList(cse.kyc_ids).forEach((id) => addEv(id));
-    asList(cse.note_ids).forEach((id) => addEv(id));
+    cited.forEach(addEv);
+    for (const m of String((pred && pred.reason) || "").matchAll(ID_RE)) if (findRecord(m[0], bundle)) addEv(m[0]);
+    asList(lab && lab.evidence).forEach(addEv);
+    asList(cse.kyc_ids).forEach(addEv);
+    asList(cse.note_ids).forEach(addEv);
     if (cust) addEv(cust.record_id);
-    asList(cse.search_ids).slice(0, 6).forEach((id) => addEv(id));
+    asList(cse.search_ids).slice(0, 6).forEach(addEv);
 
-    const evPanel = el("div", { class: "panel", id: "evidence-panel" }, el("h3", null, "Evidence records"));
+    const citedSet = new Set(cited.length ? cited : asList(lab && lab.evidence));
+    const evPanel = el("section", { class: "panel", id: "evidence-panel" },
+      el("h3", null, "Evidence records", el("span", { class: "code" }, `${citedSet.size} cited · ${evIds.length} shown`)));
     if (!evIds.length) {
-      evPanel.appendChild(el("div", { style: "color:var(--text-dim)" }, "No evidence records attached to this hit yet."));
+      evPanel.appendChild(el("div", { class: "panel-empty" }, "No evidence records are attached to this hit."));
     } else {
       const gridE = el("div", { class: "evidence-grid" });
-      const citedSet = new Set(cited.length ? cited : asList(lab && lab.evidence));
       for (const id of evIds) gridE.appendChild(evidenceCard(id, bundle, citedSet.has(id)));
-      evPanel.appendChild(el("div", { style: "color:var(--text-faint);font-size:12px;margin:-4px 0 10px" },
-        "Solid border and CITED badge mark IDs cited in the decision (or the practice label, if the system has not cited any)."
+      evPanel.appendChild(el("div", { class: "panel-note" },
+        "Cited records come first, with a dark border. Click any record ID on this page to jump to its card."
       ));
       evPanel.appendChild(gridE);
     }
     parts.push(evPanel);
 
     if (lab && lab.reference_reason) {
-      parts.push(el("div", { class: "panel" },
+      parts.push(el("section", { class: "panel" },
         el("h3", null, "Practice reference reason"),
-        highlightReason(lab.reference_reason, lab.evidence)
+        highlightReason(lab.reference_reason)
       ));
     }
     if (lab && lab.path) {
-      parts.push(el("div", { class: "panel" },
+      parts.push(el("section", { class: "panel" },
         el("h3", null, "Path through the files"),
-        el("div", { class: "path" }, lab.path)
+        el("div", { class: "path" }, linkText(lab.path))
       ));
     }
 
     if (hit.profile_notes || hit.details || (hit.relationships && hit.relationships.length) || (hit.sources && hit.sources.length) || (hit.source_urls && hit.source_urls.length)) {
-      const prof = el("div", { class: "panel" }, el("h3", null, "List-entry profile"));
-      if (hit.position_or_allegation) prof.appendChild(el("div", { style: "margin-bottom:8px" }, hit.position_or_allegation));
-      if (hit.details) prof.appendChild(el("div", { style: "color:var(--text-dim);margin-bottom:8px;font-size:12.5px" }, hit.details));
+      const prof = el("section", { class: "panel" }, el("h3", null, "List-entry profile"));
+      if (hit.position_or_allegation) prof.appendChild(el("div", { class: "prof-lead" }, hit.position_or_allegation));
+      if (hit.details) prof.appendChild(el("div", { class: "prof-details" }, hit.details));
       if (hit.profile_notes) prof.appendChild(el("div", { class: "notes-block" }, hit.profile_notes));
       if (hit.relationships && hit.relationships.length) {
-        prof.appendChild(el("h3", { style: "margin-top:14px" }, "Relationships"));
+        prof.appendChild(el("h3", { class: "sub" }, "Relationships"));
         prof.appendChild(el("ul", { class: "rel-list" }, ...hit.relationships.map((r) => el("li", null, String(r)))));
       }
       const urls = asList(hit.source_urls);
       const srcs = asList(hit.sources);
       if (urls.length || srcs.length) {
-        prof.appendChild(el("h3", { style: "margin-top:14px" }, "Sources"));
+        prof.appendChild(el("h3", { class: "sub" }, "Sources"));
         const box = el("div", { class: "sources" });
         for (const s of srcs) box.appendChild(el("div", null, String(s)));
         for (const u of urls) box.appendChild(el("div", null, el("a", { href: u, target: "_blank", rel: "noreferrer" }, u)));
@@ -1055,12 +1308,15 @@
       parts.push(prof);
     }
 
-    const caseEl = el("div", { class: "case" }, ...parts);
+    const caseEl = el("article", { class: "case" + (animate ? " enter" : "") }, ...parts);
     stage.replaceChildren(caseEl);
-    const scrollTo = new URLSearchParams(location.search).get("scroll");
+    const params = new URLSearchParams(location.search);
+    const scrollTo = params.get("scroll");
     if (scrollTo === "evidence") {
       const ev = caseEl.querySelector("#evidence-panel");
       if (ev) ev.scrollIntoView({ block: "start" });
+    } else if (params.get("jump")) {
+      focusEvidence(params.get("jump"));
     } else {
       stage.scrollTop = 0;
     }
@@ -1070,14 +1326,29 @@
     const bundle = state.bundle;
     if (!bundle) return;
     renderStats(bundle);
-    renderFilters();
     const rows = buildQueue(bundle);
-    if (state.selectedId && !rows.some((r) => r.hit.hit_id === state.selectedId)) {
-      // keep selection even if filtered out? Better to show it anyway in the stage, queue just won't highlight.
+    renderFilters(rows.counts);
+    // A filter that hides the open hit moves you to the top of the new queue.
+    if (rows.length && !rows.some((r) => r.hit.hit_id === state.selectedId)) {
+      state.selectedId = rows[0].hit.hit_id;
+      state.selectedCustomer = null;
+      history.replaceState(null, "", "#" + state.selectedId);
     }
-    if (!state.selectedId && rows.length) state.selectedId = rows[0].hit.hit_id;
-    renderQueue(rows);
-    renderCase(bundle);
+    // Rebuild the queue only when its contents change; selection alone just moves the highlight.
+    const queueKey = state.version + "|" + JSON.stringify(state.filter);
+    if (queueKey !== state.queueKey) {
+      state.queueKey = queueKey;
+      renderQueue(rows);
+    } else {
+      syncQueueSelection();
+    }
+    // Leave the detail pane (and its scroll position) alone unless the case itself changed.
+    const caseKey = () => state.version + "|" + state.selectedId + "|" + state.selectedCustomer + "|" + state.moreFields;
+    if (caseKey() !== state.caseKey) {
+      renderCase(bundle);
+      state.caseKey = caseKey();
+    }
+    state.animateNext = false;
   }
 
   function move(delta) {
@@ -1108,6 +1379,7 @@
     state.bundle.meta.sample_predictions = false;
     state.bundle.meta.prediction_source = source || "imported";
     state.bundle.meta.n_predictions = Object.keys(map).length;
+    state.version++;
     render();
   }
 
@@ -1116,6 +1388,7 @@
     const res = await fetch("data/bundle.json", { cache: "no-store" });
     if (!res.ok) throw new Error(`Failed to load data/bundle.json (${res.status}). Run python3 prepare.py and serve from /workspace/track2_ui.`);
     state.bundle = await res.json();
+    state.version++;
     // If a live output file is being served, prefer it over sample predictions.
     try {
       const live = await fetch("/track2/output/dev.jsonl", { cache: "no-store" });
@@ -1159,30 +1432,52 @@
       const txt = await file.text();
       applyPredictions(parseJsonl(txt), file.name);
     });
-    const toggleHelp = () => {
-      $("help").hidden = !$("help").hidden;
+    let helpReturn = null;
+    const setHelp = (open) => {
+      const help = $("help");
+      if (open === !help.hidden) return;
+      if (open) {
+        helpReturn = document.activeElement;
+        help.hidden = false;
+        $("help-close").focus();
+      } else {
+        help.hidden = true;
+        if (helpReturn && helpReturn.focus) helpReturn.focus();
+      }
     };
+    const toggleHelp = () => setHelp($("help").hidden);
     $("btn-help").addEventListener("click", toggleHelp);
-    $("help-close").addEventListener("click", () => { $("help").hidden = true; });
-    $("help").addEventListener("click", (e) => { if (e.target.id === "help") $("help").hidden = true; });
+    $("help-close").addEventListener("click", () => setHelp(false));
+    $("help").addEventListener("click", (e) => { if (e.target.id === "help") setHelp(false); });
 
     document.addEventListener("keydown", (e) => {
       const inField = e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA");
       if (e.key === "Escape") {
-        if (!$("help").hidden) { $("help").hidden = true; return; }
+        if (!$("help").hidden) { setHelp(false); return; }
         if (inField) { e.target.blur(); return; }
         if (state.filter.q) { state.filter.q = ""; $("q").value = ""; render(); }
         return;
       }
-      if (inField) return;
-      if (e.key === "?" || (e.key === "/" && e.shiftKey)) { e.preventDefault(); toggleHelp(); return; }
+      if (!$("help").hidden) {
+        // Keep Tab inside the dialog; its only control is Close.
+        if (e.key === "Tab") { e.preventDefault(); $("help-close").focus(); }
+        if (e.key === "?") { e.preventDefault(); setHelp(false); }
+        return;
+      }
+      if (inField) {
+        // Enter or arrow-down hands control back to the queue so J/K work straight away.
+        if (e.target.id === "q" && (e.key === "Enter" || e.key === "ArrowDown")) { e.preventDefault(); $("queue").focus(); }
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "?" || (e.key === "/" && e.shiftKey)) { e.preventDefault(); setHelp(true); return; }
       if (e.key === "/") { e.preventDefault(); $("q").focus(); $("q").select(); return; }
-      if (e.key === "j" || e.key === "J") { move(1); return; }
-      if (e.key === "k" || e.key === "K") { move(-1); return; }
-      if (e.key === "1") { state.filter.decision = "ALL"; render(); }
-      if (e.key === "2") { state.filter.decision = "DIFFERENT_ENTITY"; render(); }
-      if (e.key === "3") { state.filter.decision = "SAME_ENTITY"; render(); }
-      if (e.key === "4") { state.filter.decision = "REVIEW"; render(); }
+      // Arrows move the queue only while it has focus, so they still scroll the case pane otherwise.
+      const inQueue = document.activeElement === $("queue");
+      if (e.key === "j" || e.key === "J" || (inQueue && e.key === "ArrowDown")) { e.preventDefault(); move(1); return; }
+      if (e.key === "k" || e.key === "K" || (inQueue && e.key === "ArrowUp")) { e.preventDefault(); move(-1); return; }
+      const byKey = { 1: "ALL", 2: "DIFFERENT_ENTITY", 3: "SAME_ENTITY", 4: "REVIEW" };
+      if (byKey[e.key]) { state.filter.decision = byKey[e.key]; render(); return; }
       if (e.key === "l" || e.key === "L") { state.filter.labeled = !state.filter.labeled; render(); }
       if (e.key === "d" || e.key === "D") { state.filter.disagree = !state.filter.disagree; render(); }
     });
@@ -1190,6 +1485,9 @@
 
   async function main() {
     bind();
+    // Read the deep link before the first render can rewrite the hash.
+    const deepLink = (location.hash || "").replace(/^#/, "");
+    if (deepLink) state.selectedId = deepLink;
     window.addEventListener("hashchange", () => {
       const id = (location.hash || "").replace(/^#/, "");
       if (id && state.bundle && state.bundle.hits[id] && id !== state.selectedId) {
@@ -1206,9 +1504,8 @@
     }
     $("boot").classList.add("done");
     // Default to labeled queue in sample mode so the desk is populated with decisions.
-    const fromHash = (location.hash || "").replace(/^#/, "");
-    if (fromHash && state.bundle && state.bundle.hits[fromHash]) {
-      state.selectedId = fromHash;
+    if (deepLink && state.bundle && state.bundle.hits[deepLink]) {
+      state.selectedId = deepLink;
     }
     if (state.bundle && state.bundle.meta && state.bundle.meta.sample_predictions) {
       state.filter.labeled = true;

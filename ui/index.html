@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Fathom — Watchlist entity review</title>
+  <title>Fathom · Watchlist entity review</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -36,12 +36,12 @@
 
     <div class="top-actions">
       <span id="mode-pill" class="pill pill-sample">Sample</span>
-      <button type="button" class="btn ghost" id="btn-reload" title="Reload bundle and predictions">Reload</button>
+      <button type="button" class="btn ghost" id="btn-reload" title="Reload bundle and predictions"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg><span>Reload</span></button>
       <label class="btn ghost" id="btn-import" title="Load a dev.jsonl predictions file">
-        Load predictions
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg><span>Load predictions</span>
         <input type="file" id="file-preds" accept=".jsonl,application/jsonl,.json" hidden />
       </label>
-      <button type="button" class="btn ghost" id="btn-help" title="Keyboard shortcuts">?</button>
+      <button type="button" class="btn ghost icon-btn" id="btn-help" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/><path d="M7 16h10"/></svg></button>
     </div>
   </header>
 
@@ -54,34 +54,35 @@
   <div class="shell">
     <aside class="rail">
       <div class="search-wrap">
-        <input type="search" id="q" placeholder="Search name, hit, alert, ID…" autocomplete="off" />
+        <input type="search" id="q" placeholder="Search name, ID, reason code…" aria-label="Search hits" autocomplete="off" />
+        <kbd class="search-kbd" aria-hidden="true">/</kbd>
       </div>
       <div class="filters" id="filters"></div>
-      <div class="queue-meta" id="queue-meta"></div>
-      <div class="queue" id="queue" role="listbox" aria-label="Hit queue"></div>
+      <div class="queue-meta" id="queue-meta" aria-live="polite"></div>
+      <div class="queue" id="queue" role="listbox" aria-label="Hit queue" tabindex="0"></div>
     </aside>
 
     <main class="stage" id="stage">
       <div class="empty" id="empty">
         <div class="empty-title">Select a hit</div>
-        <div class="empty-sub">Use the queue, or press <kbd>J</kbd> / <kbd>K</kbd> to move.</div>
+        <div class="empty-sub">Pick one from the queue, or press <kbd>J</kbd> / <kbd>K</kbd>.</div>
       </div>
     </main>
   </div>
 
   <div class="help" id="help" hidden>
-    <div class="help-card">
-      <h2>Keyboard</h2>
+    <div class="help-card" role="dialog" aria-modal="true" aria-labelledby="help-title">
+      <h2 id="help-title">Keyboard</h2>
       <dl>
-        <div><dt><kbd>J</kbd> / <kbd>K</kbd></dt><dd>Next / previous hit</dd></div>
+        <div><dt><kbd>J</kbd> / <kbd>K</kbd></dt><dd>Next / previous hit (arrow keys too, while the queue has focus)</dd></div>
         <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></dt><dd>Filter: all, cleared, true match, review</dd></div>
         <div><dt><kbd>L</kbd></dt><dd>Practice-labeled only</dd></div>
         <div><dt><kbd>D</kbd></dt><dd>Disagreements with labels</dd></div>
-        <div><dt><kbd>/</kbd></dt><dd>Focus search</dd></div>
+        <div><dt><kbd>/</kbd></dt><dd>Search; <kbd>Enter</kbd> returns to the queue</dd></div>
         <div><dt><kbd>?</kbd></dt><dd>Toggle this help</dd></div>
         <div><dt><kbd>Esc</kbd></dt><dd>Close help / clear search</dd></div>
       </dl>
-      <p class="help-note">Fathom is a review desk for Track 2 entity-resolution hits. It does not decide cases; it reads <code>dev/</code> and <code>output/dev.jsonl</code>.</p>
+      <p class="help-note">Click any record ID (<code>CUS-</code>, <code>KYC-</code>, <code>NOTE-</code>…) to jump to its evidence card. Fathom does not decide cases; it reads <code>dev/</code> and <code>output/dev.jsonl</code>.</p>
       <button type="button" class="btn" id="help-close">Close</button>
     </div>
   </div>
