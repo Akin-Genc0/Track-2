@@ -46,14 +46,3 @@ Until `output/dev.jsonl` exists, the 50 practice-label answers are loaded as **s
 | `serve.py` | Tiny server + auto-refresh |
 | `data/bundle.json` | Generated case file (~4 MB) |
 | `screenshots/` | Headless captures of the desk |
-
-## GitHub Pages (share without pulling)
-
-The desk is published by `.github/workflows/pages.yml` whenever `ui/` changes on `main` or `ui/fathom-redesign`.
-
-- **No participant data is published.** On first visit the page asks for the organisers' workbook (`Screening Dev Set - browse.xlsx`) or a `dev/` folder of JSON Lines. `loader.js` reads it in the browser (a port of `tools/workbook.py`, `tools/xlsx_to_dev.py` and `prepare.py`), builds the same bundle the local server builds, and caches it in that browser. The file is never uploaded.
-- The system's decisions (`output/dev.jsonl`) are included, so the desk shows real results. **Load file** in the sidebar still swaps in any other predictions file.
-- Every feature works the same as with `serve.py`: filters, search, keyboard, case files, Tools (Screen a person, Link map with search, Analyst notes).
-- **Use a different dataset** in the sidebar clears the cached copy.
-
-One-time setup (repo admin): Settings, Pages, Source: **GitHub Actions**. If the deploy job is blocked for a non-default branch, allow that branch under Settings, Environments, github-pages, or merge into `main`.
