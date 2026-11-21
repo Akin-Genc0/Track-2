@@ -184,9 +184,9 @@ aside.notes{display:none}
     <div class="arrow">→</div>
     <div class="stage"><div class="n">04</div><div class="t">Decide</div><div class="f">decide.py</div><div class="d">Apply the policy: decision, reason code, customer record, cited evidence and reason text.</div></div>
   </div>
-  <div class="strip"><span class="tag">Python standard library only</span><span class="tag">no model</span><span class="tag">no network</span><span class="tag">~6 s for all 819 dev hits</span></div>
+  <div class="strip"><span class="tag">Python standard library only</span><span class="tag">no model</span><span class="tag">no network</span><span class="tag">about 16 s for all 819 dev hits</span></div>
   <div class="footer"><span>Track 2 · Sanctions screening</span><span><b>03</b> / 08</span></div>
-  <aside class="notes">That's our rule, built into the code: clear only on a contradiction, confirm only when the facts agree, otherwise review. Four stages. Resolve finds the customer through an account, login or email link, or by searching name, date of birth, country and city, and merges duplicate records. Profile builds the customer's facts; the latest approved ID check wins. Hit facts reads names, aliases in any script, countries, birth dates and date of death. Decide applies the policy. Plain Python, no model, no network: six seconds for all 819 dev hits.</aside>
+  <aside class="notes">That's our rule, built into the code: clear only on a contradiction, confirm only when the facts agree, otherwise review. Four stages. Resolve finds the customer through an account, login or email link, or by searching name, date of birth, country and city, and merges duplicate records. Profile builds the customer's facts; the latest approved ID check wins. Hit facts reads names, aliases in any script, countries, birth dates and date of death. Decide applies the policy. Plain Python, no model, no network: about 16 seconds for all 819 dev hits.</aside>
 </section>
 
 <!-- 4 EVIDENCE -->
@@ -238,7 +238,7 @@ verified_dob = ((1968, 3, 5),
   <div class="kpis">
     <div class="kpi hl"><div class="v">50 / 50</div><div class="l">practice decisions correct</div></div>
     <div class="kpi hl"><div class="v">0</div><div class="l">unsafe clearances</div></div>
-    <div class="kpi"><div class="v">28.0%</div><div class="l">review rate on 819 dev hits</div></div>
+    <div class="kpi"><div class="v">28.1%</div><div class="l">review rate on 819 dev hits</div></div>
   </div>
   <div class="row" style="gap:64px">
     <div class="col">
@@ -251,11 +251,11 @@ verified_dob = ((1968, 3, 5),
     </div>
     <div class="col">
       <div class="mono" style="font-size:20px;letter-spacing:.1em;color:var(--mute)">ALL 819 DEV HITS</div>
-      <div class="stack"><div style="width:56.8%;background:var(--green)">465</div><div style="width:15.2%;background:var(--accent)">125</div><div style="width:28.0%;background:var(--soft)">229</div></div>
+      <div class="stack"><div style="width:56.7%;background:var(--green)">464</div><div style="width:15.3%;background:var(--accent)">125</div><div style="width:28.0%;background:var(--soft)">230</div></div>
       <div class="legend">
-        <div><span class="sw" style="background:var(--green)"></span>Cleared (DIFFERENT_ENTITY) · 465 · 56.8%</div>
+        <div><span class="sw" style="background:var(--green)"></span>Cleared (DIFFERENT_ENTITY) · 464 · 56.7%</div>
         <div><span class="sw" style="background:var(--accent)"></span>Same entity · 125</div>
-        <div><span class="sw" style="background:var(--soft)"></span>Review · 229 · 28.0%</div>
+        <div><span class="sw" style="background:var(--soft)"></span>Review · 230 · 28.1%</div>
       </div>
     </div>
   </div>
@@ -266,21 +266,21 @@ verified_dob = ((1968, 3, 5),
 <!-- 7 ROBUSTNESS -->
 <section class="slide">
   <div class="eyebrow">Robustness &amp; determinism</div>
-  <h2>We reworded the data 17 ways to <em>break it</em>.</h2>
+  <h2>We reworded the data 16 ways to <em>break it</em>.</h2>
   <div class="ba">
     <div class="box before"><div class="k">Before hardening</div><div class="v">29</div><div class="l">up to 29 decisions flipped toward clearing on one rewording</div></div>
     <div class="arr">→</div>
     <div class="box after"><div class="k">After hardening</div><div class="v">0</div><div class="l">flips toward clearing, on every rewording</div></div>
     <div class="arr" style="opacity:0">→</div>
-    <div class="box"><div class="k" style="color:var(--accent)">All 17 combined</div><div class="v">2–4</div><div class="l">of 819 change (≤ 0.5%) — all toward REVIEW</div></div>
+    <div class="box"><div class="k" style="color:var(--accent)">2 combined runs</div><div class="v">2–4</div><div class="l">of 819 change (≤ 0.5%) — all toward REVIEW</div></div>
   </div>
   <div class="trio">
     <div class="card"><div class="t">Rewordings</div><div class="d">Surname-first and lower-case names, dates like “3rd March 1970” and “03/03/70”, reworded notes.</div></div>
     <div class="card"><div class="t">Byte-identical</div><div class="d">Same output across runs and across different hash seeds. No randomness, no clock, inputs sorted by ID.</div></div>
-    <div class="card"><div class="t">23 policy tests</div><div class="d">Death after screening, company incorporated after earliest report, placeholder names, territories, DOB one year off, ambiguous day/month.</div></div>
+    <div class="card"><div class="t">24 policy tests</div><div class="d">Death after screening, company incorporated after earliest report, placeholder names, territories, DOB one year off, ambiguous day/month.</div></div>
   </div>
   <div class="footer"><span>tools/perturb.py · tests/test_policy.py</span><span><b>07</b> / 08</span></div>
-  <aside class="notes">The unseen set rewords the free text, so we attacked ourselves. A harness rewords our data 17 ways: surname-first names, dates like "third March 1970", lower-case names. Before hardening, one rewording flipped up to 29 decisions toward clearing. After: zero, on every rewording. All combined, only 2 to 4 of 819 change, all toward review. And output is byte-identical across runs.</aside>
+  <aside class="notes">The unseen set rewords the free text, so we attacked ourselves. A harness rewords our data 16 ways: surname-first names, dates like "third March 1970", lower-case names. Before hardening, one rewording flipped up to 29 decisions toward clearing. After: zero, on every rewording. In our two combined runs, only 2 to 4 of 819 change, all toward review. And output is byte-identical across runs.</aside>
 </section>
 
 <!-- 8 LIMITS -->
@@ -292,7 +292,7 @@ verified_dob = ((1968, 3, 5),
       <h3 style="color:var(--red)">Limits</h3>
       <ul class="pts" style="gap:22px">
         <li style="font-size:29px"><b>50 labels is small</b> — a perfect practice score is a floor check, not proof.</li>
-        <li style="font-size:29px"><b>214 clears rest on location alone</b>, <b>79 on verified name alone</b>.</li>
+        <li style="font-size:29px"><b>216 clears are coded on location</b>, <b>126 on a verified name</b>.</li>
         <li style="font-size:29px">Some policy-literal clears look risky in practice — branch listings in other countries, a shared single name part. Flagged in the README.</li>
       </ul>
     </div>
@@ -307,7 +307,7 @@ verified_dob = ((1968, 3, 5),
   </div>
   <div class="close" style="margin-top:44px">Safe by design. <em>Auditable by default.</em></div>
   <div class="footer"><span>Clearsight · Track 2</span><span><b>08</b> / 08</span></div>
-  <aside class="notes">What's missing: 50 labels is a small sample. 214 clears rest on location alone and 79 on a verified name alone. Some, like bank branches abroad, follow the policy literally but look risky; we flag them in the README. Next: route those to sampled QA in Fathom. Safe by design, auditable by default. Thank you.</aside>
+  <aside class="notes">What's missing: 50 labels is a small sample. 216 clears are coded on location and 126 on a verified name. Some, like bank branches abroad, follow the policy literally but look risky; we flag them in the README. Next: route those to sampled QA in Fathom. Safe by design, auditable by default. Thank you.</aside>
 </section>
 
 </div></div>
