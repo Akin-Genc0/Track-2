@@ -482,7 +482,7 @@
       kpi("k-review", "Needs review", nf.format(c.REVIEW), "Routed to an analyst", share(c.REVIEW)),
       kpi("k-diff", "Cleared", nf.format(c.DIFFERENT_ENTITY), "False positives closed", share(c.DIFFERENT_ENTITY)),
       el("div", { class: "kpi k-score", title: scoreTitle },
-        el("div", { class: "score-main" },
+        el("div", null,
           el("div", { class: "kpi-top" }, el("span", { class: "kpi-label" }, "Practice check")),
           el("div", { class: "kpi-value" }, s.decisionScore == null ? "—" : fmtPct(s.decisionScore)),
           el("div", { class: "kpi-note" }, s.labeled ? `${agree} of ${s.labeled} match the labels` : "No practice labels loaded")
@@ -561,7 +561,6 @@
     const f = state.filter;
     $("queue-meta").replaceChildren(
       el("span", null, f.decision === "ALL" && !f.labeled && !f.disagree && !f.q ? `${nf.format(rows.length)} hits` : `${nf.format(rows.length)} of ${nf.format(Object.keys(state.bundle.hits).length)} hits`),
-      el("span", { class: "qm-sort" }, "Disagreements first, then by score")
     );
     const box = $("queue");
     box.replaceChildren();
@@ -581,7 +580,7 @@
           "aria-selected": on ? "true" : "false",
           onclick: () => selectHit(row.hit.hit_id),
         },
-        el("div", { class: "q-main" },
+        el("div", null,
           el("div", { class: "q-name" }, row.hit.name || "Unnamed"),
           el("div", { class: "q-cust" }, "Customer ", el("b", null, row.alert.customer_name || "unknown")),
           el("div", { class: "q-sub" },
@@ -591,8 +590,7 @@
           )
         ),
         el("div", { class: "q-right" },
-          el("span", { class: "dec " + cls }, row.decision === "PENDING" ? "Pending" : DECISION_LABEL[row.decision] || row.decision),
-          row.hit.match_score != null ? el("span", { class: "q-score mono", title: "Screening match score" }, String(row.hit.match_score)) : null
+          el("span", { class: "dec " + cls }, row.decision === "PENDING" ? "Pending" : DECISION_LABEL[row.decision] || row.decision)
         )
       );
       box.appendChild(item);
@@ -940,7 +938,7 @@
       return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
     };
     const meta = (k, v, mono) => v == null || v === "" ? null : el("span", { class: "meta" }, el("span", { class: "meta-k" }, k), el("span", { class: mono ? "mono" : "" }, v));
-    const head = el("div", { class: "case-head" },
+    const head = el("div", null,
       el("div", { class: "case-meta" },
         meta("Hit", hit.hit_id, true),
         meta("Alert", hit.alert_id, true),
@@ -950,9 +948,7 @@
       el("h2", { class: "case-title" }, hit.name || "Unnamed list entry"),
       el("div", { class: "case-sub" },
         el("span", null, "Screened customer ", el("b", null, alert.customer_name || "unknown")),
-        ...asList(hit.categories).map((c) => el("span", { class: "tag" }, c)),
-        hit.entity_type ? el("span", { class: "tag" }, hit.entity_type) : null,
-        hit.gender ? el("span", { class: "tag" }, hit.gender) : null
+        ...asList(hit.categories).map((c) => el("span", { class: "tag" }, c))
       )
     );
     const decisionCard = el("section", { class: "decision " + dcls },
