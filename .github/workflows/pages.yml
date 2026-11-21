@@ -1,0 +1,60 @@
+name: Deploy Fathom to GitHub Pages
+
+# Publishes the analyst desk (ui/) as a static site. The participant dataset is NOT
+# published: visitors drop the organisers' workbook into the page and it is processed
+# in their browser. Only the system's decisions (output/dev.jsonl, already in the repo)
+# are included so the desk shows real results.
+
+on:
+  push:
+    branches: [main, ui/fathom-redesign]
+    paths:
+      - "ui/**"
+      - "output/dev.jsonl"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble the static site
+        run: |
+          mkdir -p _site/data
+          cp ui/index.html ui/styles.css ui/app.js ui/loader.js ui/countries.json _site/
+          if [ -f output/dev.jsonl ]; then cp output/dev.jsonl _site/data/dev.jsonl; fi
+          touch _site/.nojekyll
+          ls -la _site _site/data
+
+      - name: Refuse to publish participant data
+        run: |
+          bad=$(find _site \( -iname '*.xlsx' -o -name 'bundle.json' -o -name 'customers.jsonl' \
+                -o -name 'hits.jsonl' -o -name 'alerts.jsonl' -o -name 'notes.jsonl' \
+                -o -name 'kyc_checks.jsonl' -o -name 'accounts.jsonl' \) -print)
+          if [ -n "$bad" ]; then echo "Dataset files found in the site, refusing to deploy:"; echo "$bad"; exit 1; fi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
