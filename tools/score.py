@@ -4,8 +4,8 @@ COST = {("DIFFERENT_ENTITY", "SAME_ENTITY"): 3, ("DIFFERENT_ENTITY", "REVIEW"): 
         ("SAME_ENTITY", "DIFFERENT_ENTITY"): 60, ("SAME_ENTITY", "REVIEW"): 2,
         ("REVIEW", "DIFFERENT_ENTITY"): 60, ("REVIEW", "SAME_ENTITY"): 2}
 def lst(v): return v if isinstance(v, list) else [x.strip() for x in str(v or "").split(";") if x.strip()]
-pred = {json.loads(l)["hit_id"]: json.loads(l) for l in open(sys.argv[1])}
-labs = [json.loads(l) for l in open(sys.argv[2])]
+pred = {json.loads(l)["hit_id"]: json.loads(l) for l in open(sys.argv[1], encoding="utf-8")}
+labs = [json.loads(l) for l in open(sys.argv[2], encoding="utf-8")]
 cost = base = 0; unsafe = 0; right = 0; code_ok = cust_ok = 0; evj = 0.0; verbose = "-v" in sys.argv
 for L in labs:
     p = pred.get(L["hit_id"])

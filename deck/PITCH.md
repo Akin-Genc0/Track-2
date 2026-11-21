@@ -6,7 +6,7 @@ Target pace: about 140 words a minute. Timings are cumulative.
 ---
 
 ## Slide 1 — Title (0:00–0:12)
-Hi, we're Clearsight. Track 2: "Is my customer sanctioned?" Our resolver clears the noise, never clears a match, and shows its working.
+Hi, we're Clearsight. A name hit is easy to raise and costly to clear incorrectly. We'll show how an analyst can trace a match, a clearance and a decision we leave open.
 
 ## Slide 2 — The problem (0:12–0:35)
 Every screening hit lands in an analyst's queue, and most are false positives. But the errors are not equal. Wrongly clearing a real match costs 60 points; any other mistake costs two or three. A wrong clearance is twenty to thirty times worse than a review. So the goal isn't to decide everything. It's to clear only what you can prove.
