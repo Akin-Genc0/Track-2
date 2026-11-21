@@ -82,6 +82,11 @@ def parse_date(s):
     return ds[0][2] if ds else None
 
 
+def placeholder_dob(d):
+    """Filler birth dates (1900-01-01, 1901-01-01, anything before 1901) carry no information."""
+    return bool(d) and (d[0] < 1901 or (d[0] == 1901 and d[1] in (None, 1) and d[2] in (None, 1)))
+
+
 def fmt_date(d):
     if not d:
         return "unknown"
@@ -98,6 +103,21 @@ def date_lt(a, b):
     a_hi = (a[0], a[1] if a[1] else 12, a[2] if a[2] else 31)
     b_lo = (b[0], b[1] if b[1] else 1, b[2] if b[2] else 1)
     return a_hi < b_lo
+
+
+_COMPANY_KIND = re.compile(r"compan|corp|organi[sz]|entity|business|firm|vessel|ship|aircraft|bank|trust|partnership|fund|foundation|"
+                           r"agency|government|enterprise|institution|association|\b(?:llc|ltd|inc|plc)\b")
+_PERSON_KIND = re.compile(r"individual|person|natural|human")
+
+
+def entity_kind(t):
+    """'company', 'individual', or None when the type is blank or unfamiliar (unknown is never a type contradiction)."""
+    t = fold(t or "").strip()
+    if _PERSON_KIND.search(t):
+        return "individual"
+    if _COMPANY_KIND.search(t):
+        return "company"
+    return None
 
 
 # ----------------------------------------------------------------------------- names

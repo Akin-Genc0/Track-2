@@ -3,8 +3,8 @@ Names/aliases, entity type, countries tied to the hit, possible birth dates (dob
 profile notes, else qualifying web search results), earliest dated report, date of death."""
 import re
 from data import as_text, as_list, as_dict_list
-from textutil import parse_date, find_dates, fold, name_parts
-from countries import norm_country, countries_in_text
+from textutil import parse_date, find_dates, fold, name_parts, entity_kind
+from countries import norm_country, countries_in_text, _key, SUBNATIONAL, SUBNATIONAL_AMBIG, NOT_COUNTRIES
 
 LISTING_PHRASES = [
     ("sanction", "a sanctioned individual"),
@@ -23,8 +23,15 @@ _STRONG = [
     r"(?i)\baged? (\d{1,3})\b", r"(?i)\b(\d{1,3})[- ]years?[- ]old\b", r"(?i)\bage of (\d{1,3})\b", r"(?i)\b(\d{1,3}) years of age\b",
     r"(?i)\b(\d{1,3}) years old\b", r"(?i)\bage:? ?(\d{1,3})\b", r"(?i)\(aged? (\d{1,3})\)", r"(?i)\b(\d{1,3}) yrs? old\b",
     r"(?i)\b(\d{1,3})-year-old\b",
-    r"(?i)\b(?:was|is|were|are|turned|reached|then|aged)\s+(\d{1,3})\b(?!\s*(?:%|percent|per\b|[a-z]*illion|thousand|times|counts?|charges?|people|persons|men|women|units?|of\b|out\b|years? (?:in|prison|sentence|jail|imprisonment)|months?|days?|weeks?|hours?|minutes?|am\b|pm\b|a\.m|p\.m|o.clock|(?-i:[A-Z$£€])))",
-    r"\b[Aa]t (\d{1,3})\b(?!\s*(?:%|percent|per\b|[a-z]*illion|thousand|times|counts?|charges?|people|persons|men|women|units?|of\b|out\b|years? (?:in|prison|sentence|jail|imprisonment)|months?|days?|weeks?|hours?|minutes?|am\b|pm\b|a\.m|p\.m|o.clock|(?-i:[A-Z$£€])))",
+    # a bare verb + number is an age only when the clause ends there or an age word follows ("was 45.", "was 45 when",
+    # "turned 45 in 2019"); "were 40 apartments" / "turned 3 companies" / "at 3 banks" are counts, not ages
+    r"(?i)\b(?:was|is|turned|reached|then|now|aged)\s+(\d{1,3})(?=\s*(?:[.,;:)!?]|$|\(|-|yrs?\b|years?\b|when\b|at the time\b|in (?:\w+ )?\d{4}\b|on \d|during\b))(?!\s*years? (?:in|prison|sentence|jail|imprisonment))",
+    r"(?i)\bat (?:the age of |age )?(\d{1,3})(?=\s*(?:years? old|yrs? old)\b|,|\s*[.;!?)]|\s*$|\s+(?:he|she|they)\b)",
+    # "John Smith, 45, was arrested" / "John Smith (45)" / "a man of 45" / "Age at the time of listing: 45"
+    r"(?<=[A-Za-z]), (\d{2}), (?=(?:was|is|who|had|has|said|appeared|pleaded|faces|faced|a|an|the|of|from)\b)",
+    r"\b[A-Z][a-z'’-]+ \((?:age |aged )?(\d{2})\)",
+    r"(?i)\ba (?:man|woman|person|boy|girl) of (\d{2})\b",
+    r"(?i)\bage at the time\b[^:\n]{0,40}:\s*(\d{2})\b",
 ]
 # Weak cues: a bare number next to a name ("Mark Mueller, 48, a sanctioned ..."). Only used for short search-result
 # snippets, and never when the number is part of a date.
@@ -39,6 +46,17 @@ _WEAK_RE = [re.compile(p) for p in _WEAK]
 _MONTH_BEFORE = re.compile(r"(?i)\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s*$")
 _BORN_RE = re.compile(r"\b(?:born|birth ?date|date of birth|d\.?o\.?b\.?|birthday)\b(?:\s+(?:is|was|of|on|in|during|around|circa|c\.|:|as|recorded as|listed as|given as))*:?", re.I)
 _REPORT_RE = re.compile(r"^\s*According to [^;\n]+;\s*([^:\n]{4,40}?)\s*:", re.M)
+
+
+def years_span(text):
+    """Every birth year one dobs item or 'born ...' clause names ('circa 1960-1965', '1960 to 1965', '1960, 1965',
+    '1960/61', '1974 or 1976'). Two or more distinct years -> the whole span min..max (no month/day), else None."""
+    ys = {d[0] for _, _, d in find_dates(text)}
+    for a, b in re.findall(r"\b(1[89]\d\d|20\d\d)/(\d{2})\b(?![/.-]\d)", text):
+        ys |= {int(a), int(a[:2] + b)}
+    if len(ys) < 2 or max(ys) - min(ys) > 15:
+        return None
+    return set(range(min(ys), max(ys) + 1))
 
 
 def listing_phrase(primary, categories):
@@ -64,7 +82,7 @@ def ages_in(text, weak=False):
             if re.match(r",? ?\d{4}\b|[/:]|[-.]\d", text[e0:e0 + 6]):
                 continue
             a = int(m.group(1))
-            if 1 <= a <= 120:
+            if 16 <= a <= 100:     # no adult watchlist profile states an age outside this; dropping only removes a clearing fact
                 out.append((m.start(), a))
     out.sort()
     res, last = [], -100
@@ -75,8 +93,25 @@ def ages_in(text, weak=False):
     return res
 
 
+_UNITS = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
+                                      "fifteen sixteen seventeen eighteen nineteen".split())}
+_TENS = {w: 10 * i for i, w in enumerate("_ _ twenty thirty forty fifty sixty seventy eighty ninety".split()) if w != "_"}
+_NUMWORD_RE = re.compile(r"(?i)\b(" + "|".join(_TENS) + r")(?:[- ](" + "|".join(list(_UNITS)[1:10]) + r"))?\b|\b(" +
+                         "|".join(list(_UNITS)[16:]) + r")\b")
+
+
+def number_words(text):
+    """'aged forty-two' -> 'aged 42' (16-99 only), so the age cues read written-out ages."""
+    def sub(m):
+        if m.group(3):
+            return str(_UNITS[m.group(3).lower()])
+        return str(_TENS[m.group(1).lower()] + (_UNITS[m.group(2).lower()] if m.group(2) else 0))
+    return _NUMWORD_RE.sub(sub, text)
+
+
 def years_from_age(text, weak=False):
     """Birth-year candidates from an 'age at date' statement: someone aged 45 in March 2019 -> 1973 or 1974."""
+    text = number_words(text)
     found = []
     ages = ages_in(text, weak)
     if not ages:
@@ -96,8 +131,9 @@ class HitFacts:
     def __init__(self, hit, matcher, search_index):
         self.hit = hit
         self.id = as_text(hit.get("hit_id"))
-        et = as_text(hit.get("entity_type")).lower()
-        self.company = et.startswith("compan") or et in ("organisation", "organization", "entity", "vessel", "business")
+        kind = entity_kind(as_text(hit.get("entity_type")))
+        self.company = kind == "company"
+        self.type_known = kind is not None
         self.entity_type = "Company" if self.company else "Individual"
         self.name = as_text(hit.get("name"))
         self.aliases = as_list(hit.get("aliases"))
@@ -106,6 +142,7 @@ class HitFacts:
         self.phrase = listing_phrase(hit.get("primary_category"), self.categories)
         # countries tied to the hit
         self.countries = []
+        self.unplaced = []      # place values we cannot tie to any country: never evidence of a different country
         for f in ("countries", "nationality", "citizenship", "addresses", "place_of_birth"):
             for item in as_dict_list(hit.get(f)):
                 if isinstance(item, dict):
@@ -115,12 +152,20 @@ class HitFacts:
                 v = re.sub(r"\[.*?\]", "", as_text(v)).strip()
                 if not v:
                     continue
-                c = norm_country(v.split(",")[-1]) or norm_country(v)
-                if not c:
-                    cs = countries_in_text(v)
-                    c = cs[-1] if cs else None
-                if c and c not in self.countries:
-                    self.countries.append(c)
+                last = _key(v.split(",")[-1])
+                if f in ("addresses", "place_of_birth") and (last in SUBNATIONAL or last in SUBNATIONAL_AMBIG):
+                    # 'Atlanta, Georgia' / 'Newark, New Jersey': a US state or Canadian province (Georgia: state or country)
+                    cs = list(SUBNATIONAL_AMBIG.get(last) or [SUBNATIONAL[last]])
+                else:
+                    c = norm_country(v.split(",")[-1]) or norm_country(v)
+                    # the last part decides (policy); if it names no country, every country the value mentions counts
+                    # ('Kenyan/British', 'Lagos Nigeria'), never just the last one found
+                    cs = [c] if c else list(countries_in_text(v))
+                if not cs and _key(v) not in NOT_COUNTRIES:
+                    self.unplaced.append(v)
+                for c in cs:
+                    if c not in self.countries:
+                        self.countries.append(c)
         # birth dates the hit gives: list of dicts {years:set, m, d, src, text}
         self.dob_source = None
         self.dobs = []
@@ -132,6 +177,10 @@ class HitFacts:
                         a, b = int(rng.group(1)), int(rng.group(2))
                         if 0 <= b - a <= 15:
                             self.dobs.append({"years": set(range(a, b + 1)), "m": None, "d": None, "src": None, "kind": "field", "text": part})
+                        continue
+                    span = years_span(part)
+                    if span:
+                        self.dobs.append({"years": span, "m": None, "d": None, "src": None, "kind": "field", "text": part})
                         continue
                     d = parse_date(part)
                     if d:
@@ -154,6 +203,17 @@ class HitFacts:
                         amb = re.match(r"\s*(?:on |in )?(\d{1,2})[/.](\d{1,2})[/.]\d{2,4}", tail)
                         if amb and int(amb.group(1)) <= 12 and int(amb.group(2)) <= 12 and amb.group(1) != amb.group(2):
                             d = (d[0], None, None)
+                        # 'born 1974 or 1976' / 'born 1960-65': every year the clause chains with or/and/to/-
+                        end = ds[0][1]
+                        for s2, e2, _ in ds[1:]:
+                            if re.fullmatch(r"\s*(?:,|or|and|to|/|-|–)\s*(?:(?:about|around|circa|c\.)\s*)?", tail[end:s2]):
+                                end = e2
+                            else:
+                                break
+                        span = years_span(tail[:end]) if end != ds[0][1] else None
+                        if span:
+                            pdobs.append({"years": span, "m": None, "d": None, "src": None, "kind": "notes", "text": tail[:end]})
+                            continue
                         pdobs.append({"years": {d[0]}, "m": d[1], "d": d[2], "src": None, "kind": "notes", "text": tail[:ds[0][1]]})
                 if not _BORN_RE.search(sent):
                     for kind, ys, mm, dd, age, ref in years_from_age(sent):
@@ -175,8 +235,10 @@ class HitFacts:
                     ys = years_from_age(as_text(sr.get("snippet")), weak=True)
                     born = None
                     for m in _BORN_RE.finditer(snip):
-                        ds = find_dates(snip[m.end():m.end() + 30])
-                        if ds:
+                        tail = snip[m.end():m.end() + 30]
+                        ds = find_dates(tail)
+                        # same rule as profile notes: the date must follow 'born' directly ('born in Kano; listed 2012' is not a birth year)
+                        if ds and ds[0][0] <= 3 or (ds and re.fullmatch(r"\s*(?:on|in)\s*", tail[:ds[0][0]])):
                             born = ds[0][2]
                     rid = as_text(sr.get("result_id"))
                     if born:

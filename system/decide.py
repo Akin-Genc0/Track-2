@@ -1,8 +1,18 @@
 """Workstream 4 - decisioning per POLICY.md.
 Clear (DIFFERENT_ENTITY) only on a contradiction; confirm (SAME_ENTITY) only on agreement; otherwise REVIEW.
 Every decision carries one reason code, the deciding record IDs and a factual 2-4 sentence reason."""
-from textutil import fmt_date, date_lt
+import re
+from textutil import fmt_date, date_lt, fold
+from explain import explain
 
+DECIDES = {"ENTITY_TYPE_MISMATCH": "the type difference", "DECEASED": "the date of death", "TEMPORAL_IMPOSSIBILITY": "the timing",
+           "DOB_MISMATCH": "the date-of-birth contradiction", "NAME_MISMATCH_VERIFIED": "the verified legal name",
+           "LOCATION_MISMATCH": "the country difference"}
+# Team call, off by default: when the customer's own record name agrees with the hit and the approved check's verified
+# name shares only a part (a surname) with that record, the check may be a relative's on a shared account. On, such a hit
+# is not cleared on the verified name (or on facts from that check alone) and goes to REVIEW. The practice labels clear
+# this pattern (H-2808BE, H-EDBB79, H-380854), so turning it on costs 3 practice decisions.
+DOUBTFUL_LINK_REVIEW = False
 CLEAR_PRIORITY = ["ENTITY_TYPE_MISMATCH", "DECEASED", "TEMPORAL_IMPOSSIBILITY", "DOB_MISMATCH", "NAME_MISMATCH_VERIFIED", "LOCATION_MISMATCH"]
 
 
@@ -42,8 +52,16 @@ def max_age_at(dob, when):
     return y
 
 
-def sentence_join(parts):
-    return " ".join(p.strip() for p in parts if p and p.strip())
+def latin(name):
+    """At least two Latin letters once accents are folded."""
+    return len(re.findall(r"[a-z]", fold(name or ""))) >= 2
+
+
+def and_join(xs):
+    xs = [x for x in xs if x]
+    if not xs:
+        return "nothing else could be compared"
+    return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1]
 
 
 class Decider:
@@ -67,6 +85,18 @@ class Decider:
                     return True, True, hn, cname, [src]
         return False, usable, None, None, []
 
+    def doubtful_link(self, prof, hit):
+        """The record name agrees with the hit, and the verified name agrees with no record name but shares a part with one."""
+        comp = prof.company
+        vp = self.m.parts(prof.verified_name[0], comp)
+        recs = [self.m.parts(n, comp) for n, _ in prof.record_names]
+        hits = [self.m.parts(n, hit.company or comp) for n in hit.names]
+        if not any(self.m.agree_parts(rp, hp) for rp in recs for hp in hits if rp and hp):
+            return False
+        if any(self.m.agree_parts(vp, rp) for rp in recs if rp):
+            return False
+        return any(self.m.part_match(a, b) for rp in recs for a in vp for b in rp)
+
     def decide_person(self, prof, hit, alert):
         screened = alert.get("screened_at")
         from textutil import parse_date
@@ -76,13 +106,14 @@ class Decider:
         cust_c = set(prof.countries)
 
         # type
-        if prof.company != hit.company:
+        if prof.company != hit.company and prof.type_known and hit.type_known:
             contra["ENTITY_TYPE_MISMATCH"] = (
                 f"The customer is {'a company' if prof.company else 'an individual'} but the hit is {'a company' if hit.company else 'an individual'}.",
                 [prof.primary])
         # deceased
         if hit.deceased and screened and date_lt(hit.deceased, screened):
-            contra["DECEASED"] = (f"The hit's profile gives a date of death of {fmt_date(hit.deceased)}, before the customer was screened on {fmt_date(screened)}.", [])
+            contra["DECEASED"] = (f"The hit's profile gives a date of death of {fmt_date(hit.deceased)}, before the customer was screened on {fmt_date(screened)}.",
+                                  [prof.primary])     # the death date is the hit's own fact; cite the screened customer record
         dobs = prof.dobs()
         # temporal
         if hit.earliest_report and dobs:
@@ -128,16 +159,63 @@ class Decider:
         if prof.verified_name:
             vname, vsrc = prof.verified_name
             vparts = self.m.parts(vname, prof.company)
-            if (prof.company or len(vparts) >= 2) and not n_agree and not getattr(prof, "verified_name_weak", False):
+            # names in different scripts cannot be compared: 'ИВАН ПЕТРОВ' vs 'Petrov, Ivan' is no evidence either way
+            comparable = latin(vname) and any(latin(n) for n in hit.names)
+            if vparts and (prof.company or len(vparts) >= 2) and not n_agree and comparable and not getattr(prof, "verified_name_weak", False):
                 contra["NAME_MISMATCH_VERIFIED"] = (
                     f"The customer's verified name is {vname} ({vsrc}), which does not match the hit's name {hit.name}.", [vsrc])
         # location
         shared = sorted(cust_c & hit_c)
-        if cust_c and hit_c and not shared:
+        if cust_c and hit_c and not shared and not hit.unplaced and not prof.unplaced:
             if not (n_agree and dob_agree):
                 ev = sorted({s for c in cust_c for s in prof.countries[c]})
                 contra["LOCATION_MISMATCH"] = (
                     f"The customer is linked only to {', '.join(sorted(cust_c))} but the hit is linked only to {', '.join(sorted(hit_c))}.", ev)
+
+        if DOUBTFUL_LINK_REVIEW and "NAME_MISMATCH_VERIFIED" in contra and self.doubtful_link(prof, hit):
+            vname, vsrc = prof.verified_name
+            for c in [c for c, (_, ev) in contra.items() if c == "NAME_MISMATCH_VERIFIED" or (ev and set(ev) <= {vsrc})]:
+                del contra[c]
+            if not contra:
+                return dict(explain({"sentences": [
+                    f"The approved check {vsrc} gives the verified name {vname}, which shares only part of the name with the customer's own record, while the record name agrees with the hit's name {hit.name}.",
+                    "The check may belong to a relative on a shared account, so it is not used to clear the hit and a person must confirm whose check it is."],
+                    "evidence": [vsrc, prof.primary]}), decision="REVIEW", reason_code="INSUFFICIENT_DATA")
+
+        def compared(code):
+            """What else was compared, for a reason whose deciding fact fits in one sentence."""
+            out, tail = [], ""
+            if code == "NAME_MISMATCH_VERIFIED":
+                if any(self.m.agree_parts(self.m.parts(rn, prof.company), self.m.parts(n, hit.company or prof.company))
+                       for rn, _ in prof.record_names for n in hit.names):
+                    tail = "the customer's own record name agrees with the hit, but the verified legal name outranks it and is enough to clear the hit under the policy."
+                else:
+                    tail = f"the customer's record names do not agree with the hit's name {hit.name} either, and the verified legal name is enough to clear the hit under the policy."
+            elif n_agree:
+                out.append(f"the customer's name agrees with the hit's name {hn}")
+            else:
+                out.append(f"the customer's name does not clearly agree with the hit's name {hit.name}")
+            if not prof.company and code not in ("DOB_MISMATCH", "TEMPORAL_IMPOSSIBILITY", "ENTITY_TYPE_MISMATCH"):
+                if dob_agree:
+                    out.append(f"the dates of birth agree ({fmt_date(dobs[0][0])} against {hit.dob_text()})")
+                elif not hit_dobs:
+                    out.append("the hit gives no date of birth to compare")
+                elif not dobs:
+                    out.append("the customer has no date of birth on file")
+                else:
+                    out.append(f"the customer's date of birth {fmt_date(dobs[0][0])} does not contradict the hit's {hit.dob_text()}")
+            if code != "LOCATION_MISMATCH":
+                if shared:
+                    out.append(f"both are linked to {', '.join(shared)}")
+                elif not cust_c:
+                    out.append("the customer has no country on file")
+                elif not hit_c:
+                    out.append("the hit lists no country")
+                else:
+                    out.append(f"the customer is linked to {', '.join(sorted(cust_c))} and the hit to {', '.join(sorted(hit_c))}")
+            if code is None:
+                return f"Compared: {and_join(out)}."
+            return f"Apart from this, {and_join(out)}; " + (tail or f"{DECIDES[code]} is enough to clear the hit under the policy.")
 
         if contra:
             codes = [c for c in CLEAR_PRIORITY if c in contra]
@@ -146,8 +224,8 @@ class Decider:
                 for e in contra[c][1]:
                     if e and e not in ev:
                         ev.append(e)
-            reason = sentence_join([contra[c][0] for c in codes[:3]])
-            return {"decision": "DIFFERENT_ENTITY", "reason_code": codes[0], "reason": reason, "evidence": ev}
+            return dict(explain({"sentences": [contra[c][0] for c in codes[:3]], "context": [compared(codes[0])], "evidence": ev}),
+                        decision="DIFFERENT_ENTITY", reason_code=codes[0])
 
         loc_src = sorted({s for c in shared for s in prof.countries[c]})
         loc_txt = f"Both the customer and the hit are linked to {', '.join(shared)}." if shared else ""
@@ -158,23 +236,25 @@ class Decider:
             for e in dob_agree_src + sorted({s for c in cust_c for s in prof.countries[c]}):
                 if e not in ev:
                     ev.append(e)
-            return {"decision": "REVIEW", "reason_code": "INSUFFICIENT_DATA", "evidence": ev,
-                    "reason": sentence_join([dob_agree_txt, name_txt,
-                                             f"However the customer is linked only to {', '.join(sorted(cust_c))} while the hit is linked only to {', '.join(sorted(hit_c))}; "
-                                             "a country difference cannot clear a hit whose name and date of birth agree, so a person must review it."])}
+            return dict(explain({"sentences": [dob_agree_txt, name_txt,
+                                               f"However the customer is linked only to {', '.join(sorted(cust_c))} while the hit is linked only to {', '.join(sorted(hit_c))}; "
+                                               "a country difference cannot clear a hit whose name and date of birth agree, so a person must review it."],
+                                 "evidence": ev}), decision="REVIEW", reason_code="INSUFFICIENT_DATA")
         if not prof.company and n_agree and dob_agree:
             ev = []
             for e in dob_agree_src + loc_src:
                 if e not in ev:
                     ev.append(e)
             code = "NAME_DOB_LOCATION_MATCH" if shared else "NAME_DOB_MATCH"
-            return {"decision": "SAME_ENTITY", "reason_code": code, "reason": sentence_join([dob_agree_txt, loc_txt, name_txt]), "evidence": ev}
+            return dict(explain({"sentences": [dob_agree_txt, loc_txt, name_txt], "context": [compared(None)], "evidence": ev}),
+                        decision="SAME_ENTITY", reason_code=code)
         if prof.company and n_agree and shared:
             ev = []
             for e in loc_src:
                 if e not in ev:
                     ev.append(e)
-            return {"decision": "SAME_ENTITY", "reason_code": "NAME_LOCATION_MATCH", "reason": sentence_join([loc_txt, name_txt]), "evidence": ev}
+            return dict(explain({"sentences": [loc_txt, name_txt], "context": [compared(None)], "evidence": ev}),
+                        decision="SAME_ENTITY", reason_code="NAME_LOCATION_MATCH")
         # review
         missing = []
         if not n_agree:
@@ -190,8 +270,8 @@ class Decider:
         if not ev:
             ev = list(nsrc) or [prof.primary]
         tail = "Nothing in the customer's records contradicts the hit, and " + " and ".join(missing) + ", so the hit can be neither cleared nor confirmed."
-        return {"decision": "REVIEW", "reason_code": "INSUFFICIENT_DATA",
-                "reason": sentence_join([loc_txt, name_txt, tail]), "evidence": ev}
+        return dict(explain({"sentences": [loc_txt, name_txt, tail], "context": [compared(None)], "evidence": ev}),
+                    decision="REVIEW", reason_code="INSUFFICIENT_DATA")
 
     def decide_unresolved(self, hit, alert, path):
         """No customer record found: never clear on unverified screened data."""

@@ -5,7 +5,7 @@ document number on approved KYC checks, transitively)."""
 import re
 from collections import defaultdict
 from data import as_text
-from textutil import parse_date, fold
+from textutil import parse_date, fold, entity_kind, placeholder_dob
 from countries import norm_country
 
 
@@ -14,9 +14,18 @@ def norm_phone(p):
     return d if len(d) >= 6 else ""
 
 
+_DOC_PLACEHOLDERS = re.compile(r"UNKNOWN|PENDING|NONE|NULL|NA|TBC|TBD|TEST|XXX|SAMPLE|DUMMY|NOTPROVIDED|REDACTED|MISSING")
+
+
 def norm_doc(n):
+    """A document number that can link records: 5+ characters, at least one digit, not one repeated character or
+    sequence, not a placeholder ('UNKNOWN', 'NONE00', '000000', '123456')."""
     d = re.sub(r"[^A-Z0-9]", "", as_text(n).upper())
-    return d if len(d) >= 4 else ""
+    if len(d) < 5 or not re.search(r"\d", d) or len(set(d)) == 1 or d in "01234567890" or d in "98765432109":
+        return ""
+    if _DOC_PLACEHOLDERS.match(d):
+        return ""
+    return d
 
 
 class UnionFind:
@@ -90,8 +99,7 @@ class CustomerIndex:
 
     @staticmethod
     def is_company(t):
-        t = as_text(t).lower()
-        return t.startswith("compan") or t in ("organisation", "organization", "entity", "business", "legal entity")
+        return entity_kind(as_text(t)) == "company"
 
     def block_key(self, p):
         g = self.m.group_of.get(p)
@@ -111,7 +119,7 @@ class CustomerIndex:
             c = C[rid]
             ph = norm_phone(c.get("phone"))
             d = parse_date(c.get("dob"))
-            if ph and d and d[1] and d[2]:
+            if ph and d and d[1] and d[2] and not placeholder_dob(d):
                 by_phone_dob[(ph, d)].append(rid)
         by_doc = defaultdict(set)
         for rid in sorted(C):
@@ -141,7 +149,7 @@ class CustomerIndex:
                 return True
         return False
 
-    def fits(self, alert, c, need_name=True):
+    def fits(self, alert, c, need_name=True, need_city=True):
         name = as_text(alert.get("customer_name"))
         if need_name and name and not self.name_fits(name, c):
             return False
@@ -153,7 +161,7 @@ class CustomerIndex:
             if rc and ctry not in rc:
                 return False
         city = fold(as_text(alert.get("city"))).strip()
-        if city:
+        if city and need_city:
             hay = fold(as_text(c.get("city")) + " " + as_text(c.get("address")))
             if hay.strip() and city not in hay:
                 return False
@@ -162,21 +170,34 @@ class CustomerIndex:
     # ------------------------------------------------------------------ resolution
     def resolve(self, alert):
         """Returns (persons, path) where persons is a list of sorted record-id lists (one per person)."""
+        persons, path, _ = self.resolve_with_near(alert)
+        return persons, path
+
+    def near(self, alert):
+        """People the screened city alone excluded (see resolve_with_near)."""
+        return self.resolve_with_near(alert)[2]
+
+    def resolve_with_near(self, alert):
+        """Like resolve, plus `near`: people found by the name search who fail only the screened city (an exonym or
+        transliteration, 'Munich' vs 'München'). They never decide anything, but a clear must also hold for them."""
         C = self.room.customers
         linked, path = [], ""
         acc = as_text(alert.get("account_ref"))
         lh = as_text(alert.get("login_handle")).lower()
         em = as_text(alert.get("email")).lower()
-        if acc:
-            linked = list(self.acc_by_id.get(acc, []))
-            path = f"account_ref {acc} -> accounts"
-        elif lh:
-            linked = [cid for _, cid in self.acc_by_login.get(lh, [])]
-            path = f"login_handle {lh} -> accounts"
-        elif em:
-            linked = list(self.by_email.get(em, []))
-            path = f"email {em} -> customers"
-        linked = sorted({r for r in linked if r in C})
+        # follow each link the alert carries, in order, until one resolves
+        tried = []
+        for kind, val, look in (("account_ref", acc, lambda: list(self.acc_by_id.get(acc, []))),
+                                ("login_handle", lh, lambda: [cid for _, cid in self.acc_by_login.get(lh, [])]),
+                                ("email", em, lambda: list(self.by_email.get(em, [])))):
+            if not val:
+                continue
+            linked = sorted({r for r in look() if r in C})
+            tried.append(f"{kind} {val} -> {'customers' if kind == 'email' else 'accounts'}")
+            if linked:
+                break
+        path = (" (link not found); ".join(tried[:-1]) + " (link not found); " if len(tried) > 1 else "") + (tried[-1] if tried else "")
+        near_records = []
         if linked:
             if len({self.uf.find(r) for r in linked}) > 1:
                 fit = [r for r in linked if self.fits(alert, C[r])]
@@ -195,6 +216,7 @@ class CustomerIndex:
             for p in self.m.parts(as_text(alert.get("customer_name")), comp):
                 cand |= self.by_part.get(self.block_key(p), set())
             records = sorted(r for r in cand if self.fits(alert, C[r]))
+            near_records = sorted(r for r in cand if r not in records and self.fits(alert, C[r], need_city=False))
             et = as_text(alert.get("entity_type"))
             if et and records:
                 same_type = [r for r in records if self.is_company(C[r].get("entity_type")) == comp]
@@ -204,4 +226,9 @@ class CustomerIndex:
             root = self.uf.find(r)
             persons.setdefault(root, {"primary": r, "records": self.members[root]})
         out = [persons[k] for k in sorted(persons, key=lambda k: persons[k]["primary"])]
-        return out, path
+        near = {}
+        for r in near_records:
+            root = self.uf.find(r)
+            if root not in persons:
+                near.setdefault(root, {"primary": r, "records": self.members[root]})
+        return out, path, [near[k] for k in sorted(near, key=lambda k: near[k]["primary"])]

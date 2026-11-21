@@ -1,0 +1,7 @@
+{"mutation": "renamed", "crash": null, "missing": 0, "moves_to_clear": []}
+{"mutation": "stringified", "crash": null, "missing": 0, "moves_to_clear": []}
+{"mutation": "nested", "crash": null, "missing": 0, "moves_to_clear": []}
+{"mutation": "optional_missing", "crash": null, "missing": 0, "moves_to_clear": []}
+{"mutation": "corrupt", "crash": null, "missing": 0, "moves_to_clear": []}
+{"mutation": "shuffled", "crash": null, "missing": 0, "moves_to_clear": []}
+{"mutation": "extra", "crash": null, "missing": 0, "moves_to_clear": []}
