@@ -1,6 +1,6 @@
 # Clearsight
 
-**Demo video (2 min):** https://files.catbox.moe/8a6ito.mp4
+**Demo video (2 min):** [watch online](https://files.catbox.moe/r3ee1i.mp4) · [copy in this repo](demo/clearsight-demo.mp4)
 
 **Clear the noise. Never clear a match.** Team Clearsight’s Track 2 sanctions-screening hackathon entry resolves customer records, compares watchlist evidence, and produces deterministic, cited decisions for analyst review. It runs locally with the Python standard library: no model, API key, or network access is needed. The slogan is our aim, not a guarantee; policy assumptions and parser limitations are documented in the [required system README](system/README.md).
 
