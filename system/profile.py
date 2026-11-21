@@ -56,7 +56,9 @@ _CAPS_STOP = {"DOB", "ID", "KYC", "UK", "US", "USA", "EU", "UAE", "AML", "PEP", 
 def parse_id_note(note):
     """Parse a free-text identity-verification note. Returns dict or None if it is not an identity check."""
     t = as_text(note.get("text"))
-    ch = as_text(note.get("channel")).lower()
+    ch = as_text(note.get("channel")).strip().lower()
+    # 'kyc', 'KYC ', 'identity', 'onboarding', 'id verification': all the identity-check channel
+    ch = "kyc" if re.search(r"kyc|identity|onboard|verif|\bidv?\b", ch) else ch
     if not t:
         return None
     is_id = (ch == "kyc" and (_DOC_RE.search(t) or _VERIFY_RE.search(t))) or (_DOC_RE.search(t) and _VERIFY_RE.search(t) and _BIRTH_RE.search(t))

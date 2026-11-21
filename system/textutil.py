@@ -18,10 +18,10 @@ def _yy(v):
 
 # date patterns, most specific first; each returns (y, m, d)
 _DATE_PATTERNS = [
-    (re.compile(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b"), lambda g: (g[0], g[1], g[2])),
+    (re.compile(r"\b(\d{4})-(\d{1,2})-(\d{1,2})(?=T\d|\b)"), lambda g: (g[0], g[1], g[2])),  # ISO, optionally with a time
     (re.compile(r"\b(\d{4})/(\d{1,2})/(\d{1,2})\b"), lambda g: (g[0], g[1], g[2])),
     (re.compile(r"\b(\d{1,2})[/.](\d{1,2})[/.](\d{4})\b"), lambda g: (g[2], g[1], g[0])),  # day-first
-    (re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?(?: of)?[- ](" + _MON + r")[-, ]+(\d{4})\b", re.I), lambda g: (g[2], g[1], g[0])),
+    (re.compile(r"\b(\d{1,2})(?:st|nd|rd|th|\.)?(?: of)?[- ](" + _MON + r")[-, ]+(\d{4})\b", re.I), lambda g: (g[2], g[1], g[0])),
     (re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?[-/ ](" + _MON + r")[-/ ,]+(\d{2})\b(?![\d:])", re.I), lambda g: (_yy(g[2]), g[1], g[0])),
     (re.compile(r"\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{2})\b(?![\d/:-]|\.\d)"), lambda g: (_yy(g[2]), g[1], g[0])),
     (re.compile(r"\b(\d{4})\.(\d{1,2})\.(\d{1,2})\b"), lambda g: (g[0], g[1], g[2])),
