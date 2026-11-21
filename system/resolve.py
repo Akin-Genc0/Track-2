@@ -149,7 +149,7 @@ class CustomerIndex:
                 return True
         return False
 
-    def fits(self, alert, c, need_name=True):
+    def fits(self, alert, c, need_name=True, need_city=True):
         name = as_text(alert.get("customer_name"))
         if need_name and name and not self.name_fits(name, c):
             return False
@@ -161,7 +161,7 @@ class CustomerIndex:
             if rc and ctry not in rc:
                 return False
         city = fold(as_text(alert.get("city"))).strip()
-        if city:
+        if city and need_city:
             hay = fold(as_text(c.get("city")) + " " + as_text(c.get("address")))
             if hay.strip() and city not in hay:
                 return False
@@ -170,21 +170,30 @@ class CustomerIndex:
     # ------------------------------------------------------------------ resolution
     def resolve(self, alert):
         """Returns (persons, path) where persons is a list of sorted record-id lists (one per person)."""
+        persons, path, _ = self.resolve_with_near(alert)
+        return persons, path
+
+    def resolve_with_near(self, alert):
+        """Like resolve, plus `near`: people found by the name search who fail only the screened city (an exonym or
+        transliteration, 'Munich' vs 'München'). They never decide anything, but a clear must also hold for them."""
         C = self.room.customers
         linked, path = [], ""
         acc = as_text(alert.get("account_ref"))
         lh = as_text(alert.get("login_handle")).lower()
         em = as_text(alert.get("email")).lower()
-        if acc:
-            linked = list(self.acc_by_id.get(acc, []))
-            path = f"account_ref {acc} -> accounts"
-        elif lh:
-            linked = [cid for _, cid in self.acc_by_login.get(lh, [])]
-            path = f"login_handle {lh} -> accounts"
-        elif em:
-            linked = list(self.by_email.get(em, []))
-            path = f"email {em} -> customers"
-        linked = sorted({r for r in linked if r in C})
+        # follow each link the alert carries, in order, until one resolves
+        tried = []
+        for kind, val, look in (("account_ref", acc, lambda: list(self.acc_by_id.get(acc, []))),
+                                ("login_handle", lh, lambda: [cid for _, cid in self.acc_by_login.get(lh, [])]),
+                                ("email", em, lambda: list(self.by_email.get(em, [])))):
+            if not val:
+                continue
+            linked = sorted({r for r in look() if r in C})
+            tried.append(f"{kind} {val} -> {'customers' if kind == 'email' else 'accounts'}")
+            if linked:
+                break
+        path = (" (link not found); ".join(tried[:-1]) + " (link not found); " if len(tried) > 1 else "") + (tried[-1] if tried else "")
+        near_records = []
         if linked:
             if len({self.uf.find(r) for r in linked}) > 1:
                 fit = [r for r in linked if self.fits(alert, C[r])]
@@ -203,6 +212,7 @@ class CustomerIndex:
             for p in self.m.parts(as_text(alert.get("customer_name")), comp):
                 cand |= self.by_part.get(self.block_key(p), set())
             records = sorted(r for r in cand if self.fits(alert, C[r]))
+            near_records = sorted(r for r in cand if r not in records and self.fits(alert, C[r], need_city=False))
             et = as_text(alert.get("entity_type"))
             if et and records:
                 same_type = [r for r in records if self.is_company(C[r].get("entity_type")) == comp]
@@ -212,4 +222,9 @@ class CustomerIndex:
             root = self.uf.find(r)
             persons.setdefault(root, {"primary": r, "records": self.members[root]})
         out = [persons[k] for k in sorted(persons, key=lambda k: persons[k]["primary"])]
-        return out, path
+        near = {}
+        for r in near_records:
+            root = self.uf.find(r)
+            if root not in persons:
+                near.setdefault(root, {"primary": r, "records": self.members[root]})
+        return out, path, [near[k] for k in sorted(near, key=lambda k: near[k]["primary"])]

@@ -30,8 +30,8 @@ def run(folder, out_path):
             aid = as_text(alert.get("alert_id")) or aid
         hf = HitFacts(h, matcher, sidx)
         if aid not in resolved_cache:
-            resolved_cache[aid] = idx.resolve(alert)
-        persons, path = resolved_cache[aid]
+            resolved_cache[aid] = idx.resolve_with_near(alert)
+        persons, path, near = resolved_cache[aid]
         try:
             if not persons:
                 res = decider.decide_unresolved(hf, alert, path)
@@ -72,6 +72,22 @@ def run(folder, out_path):
                         res = {"decision": "REVIEW", "reason_code": "AMBIGUOUS_CUSTOMER_RECORD", "customer_record_id": "AMBIGUOUS",
                                "evidence": ev,
                                "reason": f"{len(results)} different people in the system of record fit the alert ({ids}) and they lead to different decisions: {summary}. A person must decide which customer was screened."}
+            if res["decision"] == "DIFFERENT_ENTITY" and near:
+                # a clear must also hold for anyone the screened city alone excluded ('Munich' vs 'München')
+                held = []
+                for p in near:
+                    if p["primary"] not in profile_cache:
+                        profile_cache[p["primary"]] = Profile(idx, p)
+                    r = decider.decide_person(profile_cache[p["primary"]], hf, alert)
+                    if r["decision"] != "DIFFERENT_ENTITY":
+                        held.append((p, r))
+                if held:
+                    ids = ", ".join(p["primary"] for p, _ in held)
+                    summary = "; ".join(f"{p['primary']}: {r['decision']} ({r['reason_code']})" for p, r in held)
+                    res = {"decision": "REVIEW", "reason_code": "AMBIGUOUS_CUSTOMER_RECORD", "customer_record_id": "AMBIGUOUS",
+                           "evidence": list(res["evidence"]) + [e for _, r in held for e in r["evidence"] if e not in res["evidence"]],
+                           "reason": f"The customer who fits the alert is cleared ({res['reason_code']}), but {ids} fits the screened name and "
+                                     f"details except the city spelling and leads to {summary}. A person must decide which customer was screened."}
         except Exception as e:  # never crash a run; fail safe to REVIEW
             res = {"decision": "REVIEW", "reason_code": "INSUFFICIENT_DATA", "customer_record_id": None,
                    "reason": f"The hit could not be evaluated automatically ({type(e).__name__}), so it is left for review.", "evidence": []}
