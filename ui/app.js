@@ -30,6 +30,23 @@
 
   const $ = (id) => document.getElementById(id);
 
+  const ICON = {
+    all: '<path d="M4 6h16M4 12h16M4 18h10"/>',
+    same: '<path d="M12 3 4 6v6c0 4.4 3.4 8 8 9 4.6-1 8-4.6 8-9V6z"/><path d="M12 8v4M12 15.5h.01"/>',
+    review: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.5 3.6-5.5 7-5.5s6.2 2 7 5.5"/>',
+    diff: '<circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/>',
+    pending: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    labeled: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h4"/>',
+    disagree: '<path d="M7 7h10M7 7l3-3M7 7l3 3M17 17H7M17 17l-3-3M17 17l-3 3"/>',
+  };
+  const svg = (k, cls = "ico") => {
+    const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("class", cls); s.setAttribute("aria-hidden", "true");
+    s.innerHTML = ICON[k] || ""; return s;
+  };
+  const nf = new Intl.NumberFormat("en-GB");
+
+
   function el(tag, attrs, ...children) {
     const n = document.createElement(tag);
     if (attrs) {
@@ -438,27 +455,57 @@
   function renderStats(bundle) {
     const s = computeStats(bundle);
     const c = s.counts;
+    const total = c.total || 1;
+    const share = (n) => `${Math.round((n / total) * 100)}%`;
+    const kpi = (cls, label, value, note, badge) =>
+      el("div", { class: "kpi " + cls },
+        el("div", { class: "kpi-top" }, el("span", { class: "kpi-label" }, label), badge ? el("span", { class: "kpi-badge" }, badge) : null),
+        el("div", { class: "kpi-value" }, value),
+        el("div", { class: "kpi-note" }, note)
+      );
+    const labs = Object.values(bundle.labels || {});
+    const predMap = predictions(bundle);
+    const dots = el("div", { class: "lab-dots", "aria-hidden": "true" },
+      ...labs.map((l) => {
+        const p = predMap[l.hit_id];
+        const st = !p || !p.decision ? "none" : p.decision === l.decision ? "ok" : (p.decision === "DIFFERENT_ENTITY" ? "unsafe" : "off");
+        return el("i", { class: st, title: `${l.hit_id}: label ${DECISION_LABEL[l.decision] || l.decision}${p && p.decision ? ", system " + (DECISION_LABEL[p.decision] || p.decision) : ""}` });
+      })
+    );
+    const agree = labs.filter((l) => predMap[l.hit_id] && predMap[l.hit_id].decision === l.decision).length;
     const scoreTitle = s.sample
-      ? "Decision score on the 50 practice labels (sample predictions copy those labels, so this will read 100% until real output is loaded)"
-      : "Decision score on practice labels: share of review-baseline cost saved";
+      ? "Sample predictions copy the practice labels, so this reads 100% until real output is loaded"
+      : "Share of the review-everything cost saved on the practice labels (an unsafe clear costs 60)";
     $("stats").replaceChildren(
-      el("div", { class: "stat" }, el("div", { class: "k" }, "Hits"), el("div", { class: "v" }, String(c.total), el("em", null, `${c.pending} pending`))),
-      el("div", { class: "stat cleared" }, el("div", { class: "k" }, "Cleared"), el("div", { class: "v" }, String(c.DIFFERENT_ENTITY))),
-      el("div", { class: "stat match" }, el("div", { class: "k" }, "True match"), el("div", { class: "v" }, String(c.SAME_ENTITY))),
-      el("div", { class: "stat review" }, el("div", { class: "k" }, "Review"), el("div", { class: "v" }, String(c.REVIEW))),
-      el("div", { class: "stat score", title: scoreTitle },
-        el("div", { class: "k" }, "Practice score"),
-        el("div", { class: "v" }, s.decisionScore == null ? "—" : fmtPct(s.decisionScore), el("em", null, s.labeled ? (s.labeled + " labeled") : "no labels"))
-      ),
-      el("div", { class: "stat" + (s.unsafe ? " danger" : ""), title: "Predicted DIFFERENT_ENTITY when the label is SAME_ENTITY or REVIEW" },
-        el("div", { class: "k" }, "Unsafe clears"),
-        el("div", { class: "v" }, s.labeled ? String(s.unsafe) : "—")
+      kpi("k-total", "Hits reviewed", nf.format(c.total - c.pending), c.pending ? `${c.pending} still pending` : `Across ${nf.format(Object.keys(bundle.alerts || {}).length)} alerts`),
+      kpi("k-same", "True match", nf.format(c.SAME_ENTITY), "Sent to compliance", share(c.SAME_ENTITY)),
+      kpi("k-review", "Needs review", nf.format(c.REVIEW), "Routed to an analyst", share(c.REVIEW)),
+      kpi("k-diff", "Cleared", nf.format(c.DIFFERENT_ENTITY), "False positives closed", share(c.DIFFERENT_ENTITY)),
+      el("div", { class: "kpi k-score", title: scoreTitle },
+        el("div", null,
+          el("div", { class: "kpi-top" }, el("span", { class: "kpi-label" }, "Practice check")),
+          el("div", { class: "kpi-value" }, s.decisionScore == null ? "—" : fmtPct(s.decisionScore)),
+          el("div", { class: "kpi-note" }, s.labeled ? `${agree} of ${s.labeled} match the labels` : "No practice labels loaded")
+        ),
+        el("div", { class: "score-side" },
+          dots,
+          el("div", { class: "unsafe" + (s.unsafe ? " bad" : "") },
+            el("span", { class: "u-n" }, s.labeled ? String(s.unsafe) : "—"),
+            el("span", null, s.unsafe === 1 ? "unsafe clear" : "unsafe clears")
+          )
+        )
       ),
     );
     const live = !s.sample && Object.keys(predictions(bundle)).length;
     const pill = $("mode-pill");
-    pill.textContent = live ? "Live output" : "Sample";
+    pill.textContent = live ? "Live output" : "Sample data";
     pill.className = "pill " + (live ? "pill-live" : "pill-sample");
+    const src = $("source-sub");
+    if (src) {
+      const n = Object.keys(predictions(bundle)).length;
+      const from = (bundle.meta && bundle.meta.prediction_source) || "output/dev.jsonl";
+      src.textContent = live ? `${nf.format(n)} decisions from ${String(from).replace(/^\/track2\//, "")}` : "Practice-label answers, not the system";
+    }
     const banner = $("sample-banner");
     const showBanner = !live;
     banner.hidden = !showBanner;
@@ -467,69 +514,89 @@
 
   function renderFilters() {
     const f = state.filter;
-    const chips = [
-      ["ALL", "All", ""],
-      ["DIFFERENT_ENTITY", "Cleared", "cleared"],
-      ["SAME_ENTITY", "True match", "match"],
-      ["REVIEW", "Review", "review"],
-      ["PENDING", "Pending", ""],
-      ["LABELED", "Labeled", ""],
-      ["DISAGREE", "Disagrees", ""],
+    const bundle = state.bundle;
+    const s = computeStats(bundle);
+    const predMap = predictions(bundle);
+    const labs = Object.values(bundle.labels || {});
+    const disagreeN = labs.filter((l) => predMap[l.hit_id] && predMap[l.hit_id].decision && predMap[l.hit_id].decision !== l.decision).length;
+    const groups = [
+      ["Decisions", [
+        ["ALL", "All hits", "all", s.counts.total],
+        ["SAME_ENTITY", "True match", "same", s.counts.SAME_ENTITY],
+        ["REVIEW", "Needs review", "review", s.counts.REVIEW],
+        ["DIFFERENT_ENTITY", "Cleared", "diff", s.counts.DIFFERENT_ENTITY],
+        ...(s.counts.pending ? [["PENDING", "Pending", "pending", s.counts.pending]] : []),
+      ]],
+      ["Practice set", [
+        ["LABELED", "Labeled only", "labeled", labs.length],
+        ["DISAGREE", "Disagreements", "disagree", disagreeN],
+      ]],
     ];
     const box = $("filters");
     box.replaceChildren();
-    for (const [key, label, cls] of chips) {
-      let on = false;
-      if (key === "LABELED") on = f.labeled;
-      else if (key === "DISAGREE") on = f.disagree;
-      else on = f.decision === key;
-      box.appendChild(
-        el("button", {
+    for (const [title, items] of groups) {
+      box.appendChild(el("div", { class: "nav-title" }, title));
+      for (const [key, label, icon, count] of items) {
+        const toggle = key === "LABELED" || key === "DISAGREE";
+        const on = key === "LABELED" ? f.labeled : key === "DISAGREE" ? f.disagree : f.decision === key;
+        const btn = el("button", {
           type: "button",
-          class: "chip" + (on ? " on" : "") + (cls ? " " + cls : ""),
+          class: "nav-item" + (on ? " on" : "") + " n-" + icon,
+          "aria-pressed": on ? "true" : "false",
           onclick: () => {
             if (key === "LABELED") f.labeled = !f.labeled;
             else if (key === "DISAGREE") f.disagree = !f.disagree;
             else f.decision = key;
             render();
           },
-        }, label)
-      );
+        }, svg(icon), el("span", null, label),
+          toggle ? el("span", { class: "toggle" + (on ? " on" : "") }, el("i")) : el("span", { class: "count" }, nf.format(count || 0)));
+        if (toggle) btn.appendChild(el("span", { class: "count sub" }, String(count || 0)));
+        box.appendChild(btn);
+      }
     }
   }
 
   function renderQueue(rows) {
-    $("queue-meta").textContent = `${rows.length} in queue`;
+    const f = state.filter;
+    $("queue-meta").replaceChildren(
+      el("span", null, f.decision === "ALL" && !f.labeled && !f.disagree && !f.q ? `${nf.format(rows.length)} hits` : `${nf.format(rows.length)} of ${nf.format(Object.keys(state.bundle.hits).length)} hits`),
+    );
     const box = $("queue");
     box.replaceChildren();
+    if (!rows.length) {
+      box.appendChild(el("div", { class: "queue-empty" }, "No hits match. Clear the search or pick another filter."));
+      return;
+    }
     for (const row of rows) {
       const cls = DECISION_CLASS[row.decision] || "pending";
+      const on = row.hit.hit_id === state.selectedId;
       const item = el(
         "div",
         {
-          class: "queue-item" + (row.hit.hit_id === state.selectedId ? " on" : ""),
+          class: "queue-item" + (on ? " on" : ""),
           role: "option",
-          "aria-selected": row.hit.hit_id === state.selectedId ? "true" : "false",
+          tabindex: "-1",
+          "aria-selected": on ? "true" : "false",
           onclick: () => selectHit(row.hit.hit_id),
         },
-        el("div", { class: "q-bar " + cls }),
         el("div", null,
           el("div", { class: "q-name" }, row.hit.name || "Unnamed"),
+          el("div", { class: "q-cust" }, "Customer ", el("b", null, row.alert.customer_name || "unknown")),
           el("div", { class: "q-sub" },
-            el("span", null, row.hit.hit_id),
-            el("span", { class: "cat" }, row.cat)
+            el("span", { class: "mono" }, row.hit.hit_id),
+            el("span", null, row.cat),
+            row.lab ? el("span", { class: "flag" + (row.disagree ? " bad" : "") }, row.disagree ? "Label differs" : "Labeled") : null
           )
         ),
         el("div", { class: "q-right" },
-          el("span", { class: "mini " + cls }, row.decision === "PENDING" ? "Pending" : DECISION_LABEL[row.decision] || row.decision),
-          row.lab ? el("span", { class: "flag" + (row.disagree ? " bad" : "") }, row.disagree ? "Label differs" : "Labeled") : null,
-          el("span", { class: "q-score" }, row.hit.match_score != null ? String(row.hit.match_score) : "")
+          el("span", { class: "dec " + cls }, row.decision === "PENDING" ? "Pending" : DECISION_LABEL[row.decision] || row.decision)
         )
       );
       box.appendChild(item);
     }
-    const on = box.querySelector(".queue-item.on");
-    if (on) on.scrollIntoView({ block: "nearest" });
+    const sel = box.querySelector(".queue-item.on");
+    if (sel) sel.scrollIntoView({ block: "nearest" });
   }
 
   function selectHit(id, customerId) {
@@ -720,7 +787,10 @@
     }
     const re = new RegExp("(" + ids.map((i) => i.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")");
     for (const part of raw.split(re)) {
-      if (ids.includes(part)) wrap.appendChild(el("span", { class: "idchip" }, part));
+      if (ids.includes(part)) wrap.appendChild(el("button", { type: "button", class: "idchip", title: "Show this record", onclick: () => {
+        const card = document.querySelector(`.ev-card[data-ev="${part}"]`);
+        if (card) { card.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); card.classList.remove("flash"); void card.offsetWidth; card.classList.add("flash"); }
+      } }, part));
       else wrap.appendChild(document.createTextNode(part));
     }
     return wrap;
@@ -758,7 +828,7 @@
 
   function evidenceCard(id, bundle, cited) {
     const found = findRecord(id, bundle);
-    const card = el("div", { class: "ev-card" + (cited ? " cited" : "") });
+    const card = el("div", { class: "ev-card" + (cited ? " cited" : ""), "data-ev": id });
     if (!found) {
       card.append(
         el("div", { class: "ev-top" }, el("div", { class: "ev-id" }, id), el("div", { class: "ev-kind" }, "Not in bundle"))
@@ -766,7 +836,7 @@
       return card;
     }
     const { kind, rec } = found;
-    card.append(el("div", { class: "ev-top" }, el("div", { class: "ev-id" }, id), el("div", { class: "ev-kind" }, kind)));
+    card.append(el("div", { class: "ev-top" }, el("div", { class: "ev-id mono" }, id), el("div", { class: "ev-kind" }, kind), cited ? el("span", { class: "ev-cited" }, "Cited") : null));
     if (kind === "Customer") {
       card.append(evRows([
         ["Name", rec.full_name], ["Preferred", rec.preferred_name], ["DOB", rec.dob],
@@ -862,77 +932,73 @@
     });
     const kyc = latestApprovedKyc(personKyc.length ? personKyc : cse.kyc_ids, bundle);
 
-    const head = el("div", { class: "case-head" },
-      el("div", null,
-        el("div", { class: "ids" },
-          el("span", null, el("b", null, "HIT"), hit.hit_id),
-          el("span", null, el("b", null, "ALERT"), hit.alert_id),
-          alert.screened_at ? el("span", null, el("b", null, "SCREENED"), alert.screened_at) : null,
-          hit.match_score != null ? el("span", null, el("b", null, "SCORE"), String(hit.match_score)) : null
-        ),
-        el("div", { class: "case-title" },
-          hit.name || "Unnamed list entry",
-          el("small", null, "Screened customer: " + (alert.customer_name || "Unknown"))
-        ),
-        el("div", { class: "badges" },
-          ...asList(hit.categories).map((c) => {
-            const k = fold(c);
-            const cls = k.includes("sanction") ? "sanctions" : k === "pep" ? "pep" : k.includes("enforce") ? "enforcement" : k.includes("adverse") ? "adverse" : "";
-            return el("span", { class: "badge " + cls }, c);
-          }),
-          hit.entity_type ? el("span", { class: "badge" }, hit.entity_type) : null,
-          hit.gender ? el("span", { class: "badge" }, hit.gender) : null
-        )
+    const fmtLong = (d) => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d || ""));
+      if (!m) return d;
+      return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+    };
+    const meta = (k, v, mono) => v == null || v === "" ? null : el("span", { class: "meta" }, el("span", { class: "meta-k" }, k), el("span", { class: mono ? "mono" : "" }, v));
+    const head = el("div", null,
+      el("div", { class: "case-meta" },
+        meta("Hit", hit.hit_id, true),
+        meta("Alert", hit.alert_id, true),
+        meta("Screened", fmtLong(alert.screened_at)),
+        meta("Match score", hit.match_score != null ? String(hit.match_score) : null, true)
       ),
-      el("div", { class: "stamp " + dcls },
-        el("div", { class: "s-k" }, "Decision"),
-        el("div", { class: "s-v" }, decision === "PENDING" ? "Pending" : DECISION_LABEL[decision] || decision),
-        el("div", { class: "s-c" }, reasonCode || "No reason code")
+      el("h2", { class: "case-title" }, hit.name || "Unnamed list entry"),
+      el("div", { class: "case-sub" },
+        el("span", null, "Screened customer ", el("b", null, alert.customer_name || "unknown")),
+        ...asList(hit.categories).map((c) => el("span", { class: "tag" }, c))
       )
     );
-
-    const parts = [head];
+    const decisionCard = el("section", { class: "decision " + dcls },
+      el("div", { class: "d-top" },
+        el("div", null,
+          el("div", { class: "d-label" }, "Decision"),
+          el("div", { class: "d-value" }, decision === "PENDING" ? "Pending" : DECISION_LABEL[decision] || decision),
+          el("div", { class: "d-what" }, {
+            SAME_ENTITY: "This hit is the customer. Escalate to compliance.",
+            DIFFERENT_ENTITY: "A fact contradicts the hit, so it was cleared as a false positive.",
+            REVIEW: "The records can’t settle it, so an analyst should look.",
+            PENDING: "No decision has been produced for this hit yet.",
+          }[decision] || "")
+        ),
+        el("div", { class: "d-code" },
+          el("span", { class: "mono" }, reasonCode || "No reason code"),
+          pred && pred.customer_record_id ? el("span", { class: "d-cust" }, "Customer record ", el("span", { class: "mono" }, String(pred.customer_record_id))) : null
+        )
+      ),
+      highlightReason(pred && pred.reason, pred && pred.evidence),
+      codeMeta && codeMeta.when ? el("div", { class: "d-rule" }, el("span", null, "Rule"), codeMeta.when) : null
+    );
+    const parts = [head, decisionCard];
 
     if (pred && isSample(bundle, pred) && pred._sample_source === "practice_labels") {
-      parts.push(el("div", { class: "label-row" },
-        el("div", null, el("div", { class: "lab-k" }, "Source"), " Sample copied from practice labels")
-      ));
+      parts.push(el("div", { class: "label-row" }, el("span", { class: "lab-k" }, "Source"), el("span", null, "Sample copied from the practice labels")));
     }
 
     if (lab) {
       const disagree = pred && pred.decision && pred.decision !== lab.decision;
-      const row = el("div", { class: "label-row " + (pred && pred.decision ? (disagree ? "disagree" : "agree") : "") },
-        el("div", null, el("div", { class: "lab-k" }, "Practice label"), `${DECISION_LABEL[lab.decision] || lab.decision}  ·  ${(lab.reason_codes || []).join(", ")}`),
-        pred && pred.decision
-          ? el("div", null, el("div", { class: "lab-k" }, disagree ? "Disagrees with system" : "Agrees with system"), `${DECISION_LABEL[pred.decision]}  ·  ${pred.reason_code || ""}`)
-          : el("div", null, el("div", { class: "lab-k" }, "System"), "No prediction yet")
-      );
-      parts.push(row);
+      parts.push(el("div", { class: "label-row " + (pred && pred.decision ? (disagree ? "disagree" : "agree") : "") },
+        el("span", { class: "lab-icon" }, svg(disagree ? "disagree" : "labeled")),
+        el("span", { class: "lab-k" }, disagree ? "Disagrees with the practice label" : pred && pred.decision ? "Matches the practice label" : "Practice label"),
+        el("span", null, `${DECISION_LABEL[lab.decision] || lab.decision}`, el("span", { class: "mono lab-code" }, (lab.reason_codes || []).join(", ")))
+      ));
     }
 
     if (uniqueCust.length > 1) {
       parts.push(el("div", { class: "person-switch" },
-        el("span", { style: "color:var(--text-faint);font-size:11px;letter-spacing:.1em;text-transform:uppercase;align-self:center" }, "Customer record"),
-        ...uniqueCust.map((id) => {
+        el("span", { class: "ps-k" }, `${uniqueCust.length} customer records fit this alert`),
+        el("div", { class: "seg" }, ...uniqueCust.map((id) => {
           const c = bundle.customers[id];
           return el("button", {
             type: "button",
             class: id === state.selectedCustomer ? "on" : "",
             onclick: () => { state.selectedCustomer = id; render(); },
-          }, `${id} · ${c && c.full_name ? c.full_name : "record"}`);
-        })
+          }, el("span", { class: "mono" }, id), c && c.full_name ? " " + c.full_name : "");
+        }))
       ));
     }
-
-    const reasonWrap = el("div", { class: "reason-block" },
-      el("h3", null, "Reason" + (codeMeta ? `  ·  ${reasonCode}` : "")),
-      highlightReason(pred && pred.reason, pred && pred.evidence),
-      codeMeta ? el("div", { style: "margin-top:10px;color:var(--text-dim);font-size:12px" }, codeMeta.when) : null,
-      pred && pred.customer_record_id
-        ? el("div", { style: "margin-top:8px;font-family:var(--mono);font-size:12px;color:var(--text-dim)" }, "Resolved customer record: " + String(pred.customer_record_id))
-        : null
-    );
-    parts.push(reasonWrap);
 
     // Comparison table (paper)
     const noteIdsForCompare = [];
@@ -945,50 +1011,34 @@
       if (String(id).startsWith("NOTE-") && !noteIdsForCompare.includes(id)) noteIdsForCompare.push(id);
     }
     const rows = compareRows(cust, hit, kyc, alert, bundle, noteIdsForCompare);
-    const grid = el("div", { class: "compare" });
-    const table = el("div", null);
     const screenedBits = [
-      alert.customer_name && `Name ${alert.customer_name}`,
-      alert.dob && `DOB ${alert.dob}`,
-      alert.country && `Country ${alert.country}`,
-      alert.city && `City ${alert.city}`,
-      alert.account_ref && `Account ${alert.account_ref}`,
-      alert.login_handle && `Login ${alert.login_handle}`,
-      alert.email && `Email ${alert.email}`,
-    ].filter(Boolean);
-    table.appendChild(el("div", { class: "screened" },
-      el("b", null, "As screened.  "),
-      screenedBits.join("  ·  ") || "No screened identity fields."
-    ));
-    const header = el("div", { class: "field-grid" },
-      el("div", { class: "fh" }, "Field"),
-      el("div", { class: "fh" }, "Customer" + (cust ? `  ·  ${cust.record_id}` : "  ·  unresolved")),
-      el("div", { class: "fh" }, "List entry  ·  " + hit.hit_id),
-      el("div", { class: "fh status" }, "Compare")
-    );
-    table.appendChild(header);
-    const statusWord = { agree: "Agree", conflict: "Conflict", unknown: "—" };
-    for (const r of rows) {
-      const line = el("div", { class: "field-grid row-" + r.status },
+      ["Name", alert.customer_name], ["Date of birth", alert.dob], ["Country", alert.country], ["City", alert.city],
+      ["Account", alert.account_ref, true], ["Login", alert.login_handle, true], ["Email", alert.email, true],
+    ].filter((b) => b[1]);
+    const statusWord = { agree: "Agrees", conflict: "Conflict", unknown: "Not compared" };
+    const table = el("section", { class: "compare" },
+      el("div", { class: "sec-head" },
+        el("h3", null, "Customer and list entry, side by side"),
+        el("div", { class: "screened" }, el("span", { class: "meta-k" }, "As screened"),
+          ...(screenedBits.length ? screenedBits.map(([k, v, mono]) => el("span", { class: "sc" }, `${k} `, el("span", { class: mono ? "mono" : "" }, v))) : [el("span", null, "No screened identity fields")]))
+      ),
+      el("div", { class: "field-grid fg-head" },
+        el("div", null, "Field"),
+        el("div", null, "Customer ", cust ? el("span", { class: "mono" }, cust.record_id) : el("span", { class: "missing" }, "unresolved")),
+        el("div", null, "List entry ", el("span", { class: "mono" }, hit.hit_id)),
+        el("div", { class: "status" }, "Check")
+      ),
+      ...rows.map((r) => el("div", { class: "field-grid row-" + r.status },
         el("div", { class: "fcell lab" }, r.label),
         el("div", { class: "fcell val" }, r.left),
         el("div", { class: "fcell val" }, r.right),
-        el("div", { class: "fcell status" }, el("div", { class: "status-pill " + r.status }, statusWord[r.status] || r.status))
-      );
-      table.appendChild(line);
-    }
-    grid.appendChild(table);
-    parts.push(el("div", { style: "margin: 4px 0 6px; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-faint)" }, "Side-by-side comparison"), grid);
-
-    if (kyc) {
-      parts.push(el("div", { style: "margin:-8px 0 16px; font-size:12px; color:var(--text-dim)" },
-        `Verified identity from approved check ${kyc.check_id} (${kyc.checked_at || "undated"}): ${kyc.verified_name || "—"}, ${kyc.verified_dob || "no DOB"}, document country ${kyc.document_country || "—"}.`
-      ));
-    } else if (!cust) {
-      parts.push(el("div", { style: "margin:-8px 0 16px; font-size:12px; color:var(--text-dim)" },
-        "No customer record is resolved for this alert in the review bundle. The left column uses screened details only."
-      ));
-    }
+        el("div", { class: "fcell status" }, el("span", { class: "status-pill " + r.status }, statusWord[r.status] || r.status))
+      )),
+      kyc
+        ? el("div", { class: "compare-foot" }, "Verified identity from approved check ", el("span", { class: "mono" }, kyc.check_id), ` on ${fmtLong(kyc.checked_at) || "an unknown date"}: ${kyc.verified_name || "no name"}, born ${kyc.verified_dob || "unknown"}, ${kyc.document_country || "no"} document`)
+        : (!cust ? el("div", { class: "compare-foot" }, "No customer record is resolved for this alert, so the customer column uses the screened details only") : null)
+    );
+    parts.push(table);
 
     // Evidence
     const cited = [...asList(pred && pred.evidence)];
@@ -1007,16 +1057,16 @@
     if (cust) addEv(cust.record_id);
     asList(cse.search_ids).slice(0, 6).forEach((id) => addEv(id));
 
-    const evPanel = el("div", { class: "panel", id: "evidence-panel" }, el("h3", null, "Evidence records"));
+    const evPanel = el("section", { class: "panel", id: "evidence-panel" },
+      el("div", { class: "sec-head" }, el("h3", null, "Evidence records"),
+        el("div", { class: "sec-note" }, "Records cited in the decision are marked. Click a highlighted ID in the reasoning to jump here")));
     if (!evIds.length) {
-      evPanel.appendChild(el("div", { style: "color:var(--text-dim)" }, "No evidence records attached to this hit yet."));
+      evPanel.appendChild(el("div", { class: "muted" }, "No evidence records are attached to this hit yet"));
     } else {
       const gridE = el("div", { class: "evidence-grid" });
       const citedSet = new Set(cited.length ? cited : asList(lab && lab.evidence));
-      for (const id of evIds) gridE.appendChild(evidenceCard(id, bundle, citedSet.has(id)));
-      evPanel.appendChild(el("div", { style: "color:var(--text-faint);font-size:12px;margin:-4px 0 10px" },
-        "Solid border and CITED tab mark IDs cited in the decision (or the practice label, if the system has not cited any)."
-      ));
+      const ordered = [...evIds].sort((a, b) => (citedSet.has(b) ? 1 : 0) - (citedSet.has(a) ? 1 : 0));
+      for (const id of ordered) gridE.appendChild(evidenceCard(id, bundle, citedSet.has(id)));
       evPanel.appendChild(gridE);
     }
     parts.push(evPanel);
@@ -1036,17 +1086,17 @@
 
     if (hit.profile_notes || hit.details || (hit.relationships && hit.relationships.length) || (hit.sources && hit.sources.length) || (hit.source_urls && hit.source_urls.length)) {
       const prof = el("div", { class: "panel" }, el("h3", null, "List-entry profile"));
-      if (hit.position_or_allegation) prof.appendChild(el("div", { style: "margin-bottom:8px" }, hit.position_or_allegation));
-      if (hit.details) prof.appendChild(el("div", { style: "color:var(--text-dim);margin-bottom:8px;font-size:12.5px" }, hit.details));
+      if (hit.position_or_allegation) prof.appendChild(el("div", { class: "prof-pos" }, hit.position_or_allegation));
+      if (hit.details) prof.appendChild(el("div", { class: "prof-det" }, hit.details));
       if (hit.profile_notes) prof.appendChild(el("div", { class: "notes-block" }, hit.profile_notes));
       if (hit.relationships && hit.relationships.length) {
-        prof.appendChild(el("h3", { style: "margin-top:14px" }, "Relationships"));
+        prof.appendChild(el("h4", null, "Relationships"));
         prof.appendChild(el("ul", { class: "rel-list" }, ...hit.relationships.map((r) => el("li", null, String(r)))));
       }
       const urls = asList(hit.source_urls);
       const srcs = asList(hit.sources);
       if (urls.length || srcs.length) {
-        prof.appendChild(el("h3", { style: "margin-top:14px" }, "Sources"));
+        prof.appendChild(el("h4", null, "Sources"));
         const box = el("div", { class: "sources" });
         for (const s of srcs) box.appendChild(el("div", null, String(s)));
         for (const u of urls) box.appendChild(el("div", null, el("a", { href: u, target: "_blank", rel: "noreferrer" }, u)));
@@ -1075,6 +1125,12 @@
     if (state.selectedId && !rows.some((r) => r.hit.hit_id === state.selectedId)) {
       // keep selection even if filtered out? Better to show it anyway in the stage, queue just won't highlight.
     }
+    const fkey = JSON.stringify([state.filter.decision, state.filter.labeled, state.filter.disagree, state.filter.category, state.filter.q]);
+    if (state._fkey !== undefined && state._fkey !== fkey && rows.length && !rows.some((r) => r.hit.hit_id === state.selectedId)) {
+      state.selectedId = rows[0].hit.hit_id;
+      state.selectedCustomer = null;
+    }
+    state._fkey = fkey;
     if (!state.selectedId && rows.length) state.selectedId = rows[0].hit.hit_id;
     renderQueue(rows);
     renderCase(bundle);
