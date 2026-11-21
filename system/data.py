@@ -51,16 +51,19 @@ def read_jsonl(path):
     out = []
     if not os.path.exists(path):
         return out
-    with open(path, encoding="utf-8-sig") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                try:
-                    value = json.loads(line)
-                    if isinstance(value, dict):
-                        out.append(value)
-                except json.JSONDecodeError:
-                    pass
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        value = json.loads(line)
+                        if isinstance(value, dict):
+                            out.append(value)
+                    except json.JSONDecodeError:
+                        pass
+    except (OSError, UnicodeError):
+        pass  # The runner separately marks this source unavailable for clearing.
     return out
 
 

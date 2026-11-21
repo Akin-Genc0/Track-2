@@ -1,7 +1,7 @@
 {"mutation": "renamed", "crash": null, "missing": 0, "moves_to_clear": []}
 {"mutation": "stringified", "crash": null, "missing": 0, "moves_to_clear": []}
 {"mutation": "nested", "crash": null, "missing": 0, "moves_to_clear": []}
-{"mutation": "optional_missing", "crash": null, "missing": 0, "moves_to_clear": ["H-8A1D28", "H-371C7D", "H-673109", "H-292F2E", "H-F4D579", "H-ED5265", "H-FF3096", "H-5ABC42", "H-C47910", "H-603F41", "H-E330C8", "H-807AC0", "H-E07BC2", "H-F20ADB", "H-82E3BB", "H-64A743", "H-A0E7C9", "H-09A43D", "H-A8A717", "H-008282", "H-E319FE", "H-D2671F", "H-A22C42", "H-528DC5", "H-1790A1", "H-80FEC3", "H-E08038", "H-95AE61", "H-CC94B3", "H-5E4B74", "H-F93F3C", "H-5D1FC1", "H-409B64", "H-0E3F15", "H-667F0D", "H-BEDA04", "H-6DAF97", "H-4D76E3", "H-B09675", "H-D2A940", "H-94AF4F", "H-05C815", "H-B0F1DA", "H-3A05C1", "H-8B83B8", "H-15D291", "H-77C135", "H-474317", "H-26E53C", "H-A33501", "H-A17540", "H-A4B6A9", "H-B21079", "H-FC64FF", "H-7F2A6C", "H-EDED17", "H-AB75F5", "H-00E181", "H-576B0A", "H-F9EBFE"]}
+{"mutation": "optional_missing", "crash": null, "missing": 0, "moves_to_clear": []}
 {"mutation": "corrupt", "crash": null, "missing": 0, "moves_to_clear": []}
 {"mutation": "shuffled", "crash": null, "missing": 0, "moves_to_clear": []}
 {"mutation": "extra", "crash": null, "missing": 0, "moves_to_clear": []}
