@@ -100,3 +100,25 @@ Additional skills applied: `design-taste-frontend`, `impeccable` (context, craft
 | 14 | "More fields" used a text `+` | both | Chevron that rotates 90° on open (180ms, `--ease-out`, transform only) |
 
 Re-verified after fixes: no page or header overflow at either size, no console errors, and the keyboard path (j/k, 1–4, /, Esc, ?), ID-chip jumps, filter count ticks and the empty state all pass in headless Chrome. Screenshots 01–10 were recaptured.
+
+## 9. Merge with Akin's soft monochrome redesign (origin/akin/work, `d2e8751` + `abec640`)
+
+Akin replaced the sketch styling with a soft monochrome dashboard: white cards on #ececea, 16–20px radii, blur shadows, and Inter Tight display type. His visual direction wins. Sections 1–8 still describe the clarity, motion and keyboard work, but anything they say about hatching, offset shadows or the hand-drawn face is now history. This layer was re-applied on his tokens.
+
+| Conflict | Resolution |
+| --- | --- |
+| `ui/styles.css` (both rewrote it) | Took Akin's file whole as the base. Re-applied the clarity, motion and keyboard layer at the end, rebuilt on his tokens (`--card`, `--card-2/3`, `--line`, `--line-2`, `--ease`, `--r-inner`, `--r-pill`): his soft cards, his pill shapes, no hatching, no offset shadows. |
+| Contradicts vs unknown without hatching | Still distinct in shape: **contradicts** is a 1.5px ink outline with a filled ink pill (≠); **unknown** is a dashed outline with no fill (?); **agrees** is his plain hairline card (=). |
+| Decision stamp | His flat, unrotated card stamp is kept. My rubber-stamp rotation is dropped, and the entrance became a 0.97 → 1 settle plus fade (220ms, ease-out). |
+| Search icon | His field already draws a search icon as a background image, so I removed my inline SVG to avoid a double icon. The `/` hint stays. |
+| `ui/app.js` (one sentence) | Kept my rewritten evidence note with his wording: "CITED badge" instead of "CITED tab". |
+| `ui/index.html` | Auto-merged: his fonts (Inter Tight), theme colour and favicon, plus my icons, shortcut hint and the em-dash-free title. |
+| `ui/screenshots/01–06` (binary) | Kept mine, then recaptured all ten against the merged UI. |
+| His reduced-motion block (`0.01ms` on everything) | Replaced with the gentler block: fades kept, travel and scale dropped (AUDIT §6). |
+| `--faint` #8d8d88 (3.4:1 on white) | Raised to #6c6c68 (≥4.5:1). An 11px floor was applied to his sub-11px labels (26 declarations), per the impeccable `undersized-ui-text` check. |
+
+Two defects in the incoming stylesheet were fixed without changing his values:
+- A stray `}` in the 900px media query made `.case-title { font-size: 28px }` and the narrow `.stat` sizes apply at every width.
+- A lost `.fh {` selector left the table-header declarations orphaned inside another 900px block, so the header row rendered as unstyled 16px text. The selector is restored.
+
+QA re-run at 1280×800 and 1440×900 after the merge: no page or header overflow, no console errors, and the keyboard path, ID jumps, count ticks, empty state and help all pass.

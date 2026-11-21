@@ -1256,7 +1256,7 @@
       const gridE = el("div", { class: "evidence-grid" });
       for (const id of evIds) gridE.appendChild(evidenceCard(id, bundle, citedSet.has(id)));
       evPanel.appendChild(el("div", { class: "panel-note" },
-        "Cards with a heavy border and a CITED tab are the records the decision cites. Click any ID above to jump to its card."
+        "Cards with a heavy border and a CITED badge are the records the decision cites. Click any ID above to jump to its card."
       ));
       evPanel.appendChild(gridE);
     }
