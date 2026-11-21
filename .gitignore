@@ -12,3 +12,5 @@ xlsx_raw/
 track1_zip_unrelated/
 ui/data/
 *.zip
+*.xlsx
+output/*.tmp

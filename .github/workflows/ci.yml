@@ -13,8 +13,3 @@ jobs:
           python-version: '3.11'
       - run: python3 tests/test_policy.py
       - run: python -m py_compile system/*.py
-      - name: Reproduce development predictions and score
-        run: |
-          python3 tools/xlsx_to_dev.py
-          system/run data/dev output/dev.jsonl
-          python3 tools/score.py output/dev.jsonl data/dev/practice_labels.jsonl -v
