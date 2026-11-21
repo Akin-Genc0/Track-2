@@ -124,6 +124,20 @@ case("ambiguous_cleared_names_each_country", [cust("CUS-000026", "Ada Eze", "198
                                              cust("CUS-000027", "Ada Eze", "1985-02-02", nat="Chile", res="CL")],
      alert("A-000026", "Ada Eze"), hit("A-000026", "Ada Eze", countries=["Japan"]), "DIFFERENT_ENTITY", "LOCATION_MISMATCH",
      says=["CUS-000026, linked to France", "CUS-000027, linked to Chile"])
+# 25 shared account: an onboarding row naming an account the customer does not hold never attaches its check to them
+case("onboarding_wrong_holder_not_attached", [cust("CUS-000028", "Jake Moore", "1980-01-01"), cust("CUS-000029", "Linda Moore", "1982-02-02")],
+     alert("A-000028", "Jake Moore", "ACC-28"), hit("A-000028", "Moore, Jake", countries=["United Kingdom"]), "REVIEW",
+     accounts=[acc("ACC-28", "CUS-000028"), acc("ACC-J", "CUS-000028"), acc("ACC-J", "CUS-000029"), acc("ACC-29", "CUS-000029")],
+     onboarding=[onb("ACC-29", "CUS-000028", "APP-29")], kyc=[chk("KYC-29", "APP-29", "Linda Moore", "1982-02-02", "United Kingdom", "approved", "2024-01-01")])
+# 26 an onboarding row without an account attaches when the customer holds no shared account ...
+case("onboarding_no_account_single_holder", [cust("CUS-000030", "Jake Morey", "1980-01-01")], alert("A-000030", "Jake Morey", "ACC-30"),
+     hit("A-000030", "Morey, Jake", countries=["United Kingdom"]), "DIFFERENT_ENTITY", "NAME_MISMATCH_VERIFIED", accounts=[acc("ACC-30", "CUS-000030")],
+     onboarding=[onb(None, "CUS-000030", "APP-30")], kyc=[chk("KYC-30", "APP-30", "Linda Morey", "1980-01-01", "United Kingdom", "approved", "2024-01-01")])
+# 27 ... but not when they hold a joint account (the check may be the other holder's)
+case("onboarding_no_account_shared_holder", [cust("CUS-000031", "Jake Moran", "1980-01-01"), cust("CUS-000032", "Linda Moran", "1982-02-02")],
+     alert("A-000031", "Jake Moran", "ACC-31"), hit("A-000031", "Moran, Jake", countries=["United Kingdom"]), "REVIEW",
+     accounts=[acc("ACC-31", "CUS-000031"), acc("ACC-31", "CUS-000032")],
+     onboarding=[onb(None, "CUS-000031", "APP-31")], kyc=[chk("KYC-31", "APP-31", "Linda Moran", "1982-02-02", "United Kingdom", "approved", "2024-01-01")])
 
 fails = 0
 for c in CASES:
