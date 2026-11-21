@@ -1,4 +1,4 @@
-"""Local scorer: python3 tools/score.py output/dev.jsonl data/dev/practice_labels.jsonl"""
+"""Local scorer: python3 tools/score.py output/dev.jsonl dev/practice_labels.jsonl"""
 import json, sys
 COST = {("DIFFERENT_ENTITY", "SAME_ENTITY"): 3, ("DIFFERENT_ENTITY", "REVIEW"): 3,
         ("SAME_ENTITY", "DIFFERENT_ENTITY"): 60, ("SAME_ENTITY", "REVIEW"): 2,
