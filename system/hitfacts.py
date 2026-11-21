@@ -25,8 +25,13 @@ _STRONG = [
     r"(?i)\b(\d{1,3})-year-old\b",
     # a bare verb + number is an age only when the clause ends there or an age word follows ("was 45.", "was 45 when",
     # "turned 45 in 2019"); "were 40 apartments" / "turned 3 companies" / "at 3 banks" are counts, not ages
-    r"(?i)\b(?:was|is|turned|reached|then|aged)\s+(\d{1,3})(?=\s*(?:[.,;:)!?]|$|\(|-|yrs?\b|years?\b|when\b|at the time\b|in (?:\w+ )?\d{4}\b|on \d|during\b))(?!\s*years? (?:in|prison|sentence|jail|imprisonment))",
-    r"(?i)\bat (?:the age of |age )?(\d{1,3})(?=\s*(?:years? old|yrs? old)\b|,|\s+(?:he|she|they)\b)",
+    r"(?i)\b(?:was|is|turned|reached|then|now|aged)\s+(\d{1,3})(?=\s*(?:[.,;:)!?]|$|\(|-|yrs?\b|years?\b|when\b|at the time\b|in (?:\w+ )?\d{4}\b|on \d|during\b))(?!\s*years? (?:in|prison|sentence|jail|imprisonment))",
+    r"(?i)\bat (?:the age of |age )?(\d{1,3})(?=\s*(?:years? old|yrs? old)\b|,|\s*[.;!?)]|\s*$|\s+(?:he|she|they)\b)",
+    # "John Smith, 45, was arrested" / "John Smith (45)" / "a man of 45" / "Age at the time of listing: 45"
+    r"(?<=[A-Za-z]), (\d{2}), (?=(?:was|is|who|had|has|said|appeared|pleaded|faces|faced|a|an|the|of|from)\b)",
+    r"\b[A-Z][a-z'’-]+ \((?:age |aged )?(\d{2})\)",
+    r"(?i)\ba (?:man|woman|person|boy|girl) of (\d{2})\b",
+    r"(?i)\bage at the time\b[^:\n]{0,40}:\s*(\d{2})\b",
 ]
 # Weak cues: a bare number next to a name ("Mark Mueller, 48, a sanctioned ..."). Only used for short search-result
 # snippets, and never when the number is part of a date.
@@ -88,8 +93,25 @@ def ages_in(text, weak=False):
     return res
 
 
+_UNITS = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
+                                      "fifteen sixteen seventeen eighteen nineteen".split())}
+_TENS = {w: 10 * i for i, w in enumerate("_ _ twenty thirty forty fifty sixty seventy eighty ninety".split()) if w != "_"}
+_NUMWORD_RE = re.compile(r"(?i)\b(" + "|".join(_TENS) + r")(?:[- ](" + "|".join(list(_UNITS)[1:10]) + r"))?\b|\b(" +
+                         "|".join(list(_UNITS)[16:]) + r")\b")
+
+
+def number_words(text):
+    """'aged forty-two' -> 'aged 42' (16-99 only), so the age cues read written-out ages."""
+    def sub(m):
+        if m.group(3):
+            return str(_UNITS[m.group(3).lower()])
+        return str(_TENS[m.group(1).lower()] + (_UNITS[m.group(2).lower()] if m.group(2) else 0))
+    return _NUMWORD_RE.sub(sub, text)
+
+
 def years_from_age(text, weak=False):
     """Birth-year candidates from an 'age at date' statement: someone aged 45 in March 2019 -> 1973 or 1974."""
+    text = number_words(text)
     found = []
     ages = ages_in(text, weak)
     if not ages:
