@@ -272,7 +272,13 @@ def build(track2: Path, out_dir: Path, predictions_only: bool = False) -> Path:
 
     print("Loading dev files…", flush=True)
     hits = load_jsonl(dev / "hits.jsonl")
-    alerts = load_jsonl(dev / "alerts.jsonl")
+    alerts = []
+    for a in load_jsonl(dev / "alerts.jsonl"):
+        # Official dev files nest the screened customer under alert.customer.
+        for wrapper in ("customer", "screened", "screened_customer"):
+            if isinstance(a.get(wrapper), dict):
+                a = dict(a[wrapper], **{k: v for k, v in a.items() if k != wrapper})
+        alerts.append(a)
     customers = load_jsonl(dev / "customers.jsonl")
     accounts = load_jsonl(dev / "accounts.jsonl")
     onboarding = load_jsonl(dev / "onboarding.jsonl")
