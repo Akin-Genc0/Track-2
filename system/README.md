@@ -185,13 +185,14 @@ evidence for the chosen reason code; on the practice labels that alone lowered e
 H-CF173B, H-D9BBCC, whose references cite every contradiction). It is now wired in with decide.py choosing the evidence as
 before, and it guarantees two to four sentences. Before, 358 of 819 dev reasons were a single sentence; now none are.
 
-**Shared-account KYC checks (team call, switch off).** Akin's spot check (`REVIEW_NOTES.md`) flagged H-006E36, H-FE1415 and
+**Shared-account KYC checks (policy reading, switch off).** Akin's spot check (`REVIEW_NOTES.md`) flagged H-006E36, H-FE1415 and
 H-E954EE: the customer's own record name agrees with the hit, but the approved check gives another given name with the same
 surname (record Joseph Ferrante, check MARIA MEGAN FERRANTE), which looks like a relative's check. `DOUBTFUL_LINK_REVIEW` in
 decide.py sends that pattern to REVIEW instead of clearing on the verified name. It is **off**: the practice labels clear exactly
 this pattern (H-2808BE record Ridwan Azeez / check CHINEDU AZEEZ, H-EDBB79, H-380854, all with one account holder and the check
-on the customer's own applicant, like Akin's three). Turned on, it moves 60 dev clears to REVIEW and practice drops to 46/50
-(score 1.000 → 0.889), so the labels treat "verified beats declared" literally here.
+on the customer's own applicant, like Akin's three). It stays off because policy principle 4 says the verified legal name
+outranks the record name; the practice labels apply the policy the same way. Turned on, it moves 60 dev clears to REVIEW (practice
+46/50, score 0.889). It is a one-line switch for a bank that wants to be stricter. See "Judge Q&A".
 
 ## Three cases
 1. **Clear mismatch: H-D861DA → DIFFERENT_ENTITY / DOB_MISMATCH.** The alert's account ACC-A82365 is a joint account (CUS-804632 and CUS-902175), and the screened name and DOB pick CUS-804632. That customer's latest approved identity check is an onboarding note, NOTE-8548C1, giving a DOB of 1979-11-08. The hit has no `dobs` field, but its profile notes give an age at a date, so it was born in 1976 or 1977. 1979 is more than one year outside both years, so the hit is cleared, citing NOTE-8548C1.
@@ -209,6 +210,15 @@ document number on approved checks (`UnionFind`). If more than one person fits a
 `hitfacts.py`, `HitFacts`, reads the hit's names and aliases, entity type, structured DOBs, countries and death date. It also reads
 dated ages in the profile text (`years_from_age`). Search results count only when tied to this listing (`build_search_index`). Names
 on both sides are compared by `textutil.NameMatcher.agree_parts` (principle 8).
+
+**Do you resolve people on the watchlist side too?** No, and on purpose. The watchlist side is per-hit fact extraction:
+`hitfacts.py`, `HitFacts`, builds one fact sheet from one hit record and the search results tied to that listing. It never merges
+two hits into one listed person. That is safe for three reasons. The brief asks a per-hit question: is *this* hit the screened
+customer? A clear may rest only on facts that belong to that listing. If we merged hits that share a name, a date of birth or
+country from one listing could be carried into another, creating a contradiction that does not exist, which is exactly how an unsafe
+clearance happens. And when two hits really are the same listed person, deciding each one against the same resolved customer
+gives the same answer, so nothing is lost. Cross-record resolution happens only on the customer side (`resolve.py`), where
+the bank's own identifiers (accounts, logins, emails, phone plus DOB, document numbers) make the grouping verifiable.
 
 **How is evidence represented?** Every customer fact in `profile.Profile` is stored with the set of record IDs it came from, for
 example `countries = {"Spain": {"CUS-377745"}}`. `decide.Decider.decide_person` cites only the sources of the facts that decided the
@@ -235,13 +245,16 @@ they score 0.965 with 0 unsafe; every miss is a `REVIEW` that could have been a 
 names, dates, ages and countries in 18 ways; no rewrite moves any decision towards `DIFFERENT_ENTITY`. `tools/unseen_sim.py`
 mutates the schema; there are no crashes and no moves to clear.
 
-**What about the 58 clears where the record name agrees but the verified name does not?** In 58 dev clears (`NAME_MISMATCH_VERIFIED`),
-the customer's own record name agrees with the hit, but the approved identity check gives a different name. Often the surname is
-the same and the given name differs, as with a family member on a shared account. Policy principle 4 says the verified legal name
-outranks the record name, and the clear rule for the name ground says "even if the name on their record does". The practice labels
-clear this exact pattern (H-2808BE, H-EDBB79, H-380854). `DOUBTFUL_LINK_REVIEW` in `decide.py` (`Decider.doubtful_link`) would send
-it to review instead. It is **off**: switched on, it moves 60 dev clears to `REVIEW` and practice falls to 46/50 (score 0.889,
-measured). In a live deployment we would turn it on, or sample these clears for QA.
+**Why is `DOUBTFUL_LINK_REVIEW` off? (the 58 clears where the record name agrees but the verified name does not)** In 58 dev
+clears (`NAME_MISMATCH_VERIFIED`), the customer's own record name agrees with the hit, but the approved identity check gives a
+different name. Often the surname is the same and the given name differs, which can look like a family member's check on a shared
+account. We follow the policy as written. Principle 4 says "verified beats declared": the most recent approved identity check
+outranks the name on the customer record. The name ground for a clear applies "even if the name on their record does" agree. The
+practice labels read the policy the same way and clear this exact pattern (H-2808BE, H-EDBB79, H-380854). They confirm the reading;
+they are not why we chose it. A stricter bank can change this with one line: setting `DOUBTFUL_LINK_REVIEW = True` at the top of
+`decide.py` makes `Decider.doubtful_link` send these hits to `REVIEW` instead of clearing on the verified name. Measured on dev, that
+moves about 60 clears (60 exactly) to `REVIEW` and never adds a clear, so it can only make the system more cautious. We left it
+off because the brief's policy is the spec; in production we would offer it as a bank setting, or sample these clears for QA.
 
 **Known failure modes.**
 - **Policy-literal clears that look risky:** 217 clears rest on location alone (for example, bank branch listings abroad) and 79 on a
@@ -272,7 +285,7 @@ measured). In a live deployment we would turn it on, or sample these clears for 
 - `python3 redteam/run_all.py --strict`: 48 adversarial synthetic cases (2 open, both F12).
 - `python3 tests/test_ages.py`: age-cue probes (real ages read, counts and money not).
 - `python3 tests/test_loader.py`, `python3 tests/test_runner_boundary.py`, `python3 tests/test_real_format.py`: loader tolerance, official-format fixtures, and per-hit fail-safes.
-- `python3 tests/test_packaging.py`: `system/run` is executable and runs from any directory with spaces in paths; a missing data folder or `hits.jsonl` exits with code 2 and writes nothing; no data, workbook, `.env` or API key is tracked.
+- `python3 tests/test_packaging.py`: `system/run` is executable and runs from any directory with spaces in paths; a missing data folder, a missing `hits.jsonl` or one with no readable hit records exits with code 2 and writes nothing; no data, workbook, `.env` or API key is tracked.
 - `python3 tools/check_submission.py output/dev.jsonl dev`: submission format, provenance and 2–4 sentence check.
 - `python3 tools/unseen_sim.py dev`: schema mutations (renamed, stringified, nested, missing, corrupt…); no crash, no move to clear.
 - `TRACK2_DEV=<dev folder> python3 tools/shadow.py gen <dir> 7 && system/run <dir> <out> && python3 tools/shadow.py score <dir> <out>`: shadow test set.

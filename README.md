@@ -63,7 +63,7 @@ On the full dev set the system takes 589 of 819 hits (72%) off the analyst queue
 >
 > - **50 labels is a small sample.** 50/50 is a sanity check, not an accuracy estimate for the unseen set.
 > - **Single-signal clears.** Counted from the reason codes in `output/dev.jsonl`: **217 of the 464 clears rest on location alone** (`LOCATION_MISMATCH` is the lowest-priority ground, so it is the code only when no other contradiction exists), and **79 rest on a verified name alone** (`NAME_MISMATCH_VERIFIED` with no country contradiction). Both follow the policy literally; some, such as bank branches abroad or names sharing a single part, deserve sampled QA. Examples are listed in [system/README.md](system/README.md#honest-limitations).
-> - **Q: Why is `DOUBTFUL_LINK_REVIEW` off?** A: The practice labels clear exactly the pattern it would send to review (a verified name that differs from the record name on the customer’s own check); switched on, it moves 60 dev clears to review and practice falls to 46/50 (score 0.889, measured above).
+> - **Q: Why is `DOUBTFUL_LINK_REVIEW` off?** A: Policy principle 4 says verified beats declared: the approved check’s legal name outranks the record name, so a verified name that disagrees with the hit clears it. The practice labels read the policy the same way. A bank that wants to be stricter can flip one line in `decide.py`; that moves about 60 dev clears to review and adds no clears (practice then 46/50, score 0.889, measured above).
 
 ## 30-second quickstart
 
@@ -89,7 +89,7 @@ python3 tests/test_packaging.py
 python3 -m py_compile system/*.py
 ```
 
-`system/run` works from any working directory and with spaces in either path. It reads only the data folder it is given and writes one JSON line per hit. If the data folder or its `hits.jsonl` is missing, it stops with exit code 2 and a clear message instead of writing an empty file.
+`system/run` works from any working directory and with spaces in either path. It reads only the data folder it is given and writes one JSON line per hit. If the data folder or its `hits.jsonl` is missing, or `hits.jsonl` has no readable hit records, it stops with exit code 2 and a clear message and writes no output file.
 
 ## How it works
 

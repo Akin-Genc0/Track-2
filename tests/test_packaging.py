@@ -40,7 +40,12 @@ class Packaging(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             empty = Path(tmp) / 'no hits'
             empty.mkdir()
-            for folder, needle in ((Path(tmp) / 'missing', 'data folder not found'), (empty, 'hits.jsonl not found')):
+            blank = Path(tmp) / 'blank hits'
+            blank.mkdir()
+            (blank / 'hits.jsonl').write_text('\n')
+            (blank / 'alerts.jsonl').write_text(json.dumps({'alert_id': 'A-00000A', 'hit_ids': ['H-00000A']}) + '\n')
+            for folder, needle in ((Path(tmp) / 'missing', 'data folder not found'), (empty, 'hits.jsonl not found'),
+                                   (blank, 'no readable hit records')):
                 out = Path(tmp) / 'out.jsonl'
                 proc = subprocess.run([str(RUN), str(folder), str(out)], capture_output=True, text=True, timeout=120)
                 self.assertEqual(proc.returncode, 2, proc.stderr)
