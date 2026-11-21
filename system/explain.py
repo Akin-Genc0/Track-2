@@ -90,9 +90,10 @@ def explain_candidates(results, header):
     return {"reason": " ".join(_sentence(x) for x in out), "evidence": evidence}
 
 
-def explain_each_cleared(results):
-    """Every person who fits is cleared: show each one's own contradiction, so the reason matches the evidence."""
-    out = [f"{len(results)} different people in the system of record fit the alert ({_ids(pid for pid, _ in results)}), "
+def explain_each_cleared(results, fits=None):
+    """Every person who fits is cleared: show each one's own contradiction, so the reason matches the evidence.
+    fits labels the people in the opening sentence (default: their IDs)."""
+    out = [f"{len(results)} different people in the system of record fit the alert ({fits or _ids(pid for pid, _ in results)}), "
            "and the hit is cleared for each of them."]
     if len(results) < MAX_SENTENCES:
         out += [_for(pid, r) for pid, r in results]

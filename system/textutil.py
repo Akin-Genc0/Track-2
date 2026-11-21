@@ -217,24 +217,14 @@ class NameMatcher:
         cands = self._candidates(A, B)
         if not cands:
             return False
-        best = (0, 0, 0)
-
-        def rec(k, ua, ub, n):
-            nonlocal best
-            key = (n, len(ua), len(ub))
-            if key > best:
-                best = key
-            for t in range(k, len(cands)):
-                ia, ib = cands[t]
-                if ia & ua or ib & ub:
-                    continue
-                rec(t + 1, ua | ia, ub | ib, n + 1)
-        if len(cands) > 18:
-            cands = cands[:18]
-        rec(0, frozenset(), frozenset(), 0)
-        n, ca, cb = best
-        if n >= 2:
-            return True
+        # Exact over every candidate, no cap (a cap could clear a long name on a truncated set): two disjoint
+        # matches mean >=2 matched parts; otherwise every pair overlaps, so the best matching is one candidate.
+        # Pairwise check is O(len(cands)^2), bounded by the name lengths.
+        for t, (ia, ib) in enumerate(cands):
+            for ja, jb in cands[t + 1:]:
+                if not (ia & ja or ib & jb):
+                    return True
+        _, ca, cb = max((1, len(ia), len(ib)) for ia, ib in cands)
         if len(A) < len(B):
             return ca == len(A)
         if len(B) < len(A):

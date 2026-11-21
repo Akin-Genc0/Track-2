@@ -43,6 +43,16 @@ def fallback(detail, customer_id=None):
             "reason": detail + ". An analyst must review this hit before a decision can be made."}
 
 
+def fits_label(people):
+    """'CUS-1, linked to France; CUS-2, linked to Peru and Chile': every fitting customer with their own countries."""
+    def where(prof):
+        cs = sorted(prof.countries)
+        if not cs:
+            return "no country on file"
+        return "linked to " + (cs[0] if len(cs) == 1 else ", ".join(cs[:-1]) + " and " + cs[-1])
+    return "; ".join(f"{pid}, {where(prof)}" for pid, prof in people)
+
+
 def run(folder, out_path):
     # Recover the work queue independently of decision-module initialization.
     hits, _ = recover_rows(folder, "hits")
@@ -115,14 +125,14 @@ def run(folder, out_path):
                         for e in r["evidence"]:
                             if e not in ev:
                                 ev.append(e)
-                    ids = ", ".join(p["primary"] for p, _ in results)
+                    ids = fits_label([(p["primary"], profile_cache[p["primary"]]) for p, _ in results])
                     if len(decs) == 1:
                         r0 = results[0][1]
                         res = dict(r0, customer_record_id="AMBIGUOUS", evidence=ev,
                                    reason=f"{len(results)} different people in the system of record fit the alert ({ids}), and the hit is "
                                           f"{OUTCOME[r0['decision']]} for each of them. " + r0["reason"])
                         if r0["decision"] == "DIFFERENT_ENTITY":
-                            res.update(explain_each_cleared([(p["primary"], r) for p, r in results]))
+                            res.update(explain_each_cleared([(p["primary"], r) for p, r in results], ids))
                     else:
                         res = dict(explain_candidates([(p["primary"], r) for p, r in results],
                                                       f"{len(results)} different people in the system of record fit the alert ({ids}) and they "

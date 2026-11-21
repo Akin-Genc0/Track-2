@@ -14,8 +14,8 @@ def cust(rid, name, dob, nat="United Kingdom", res="GB", email=None, phone=None,
 CASES = []   # (name, customers, accounts, onboarding, kyc, notes, alert, hit, search, expected decision, expected code)
 
 
-def case(name, customers, alert, hit, exp, code=None, accounts=(), onboarding=(), kyc=(), notes=(), search=()):
-    CASES.append(dict(name=name, customers=customers, alert=alert, hit=hit, exp=exp, code=code, accounts=list(accounts),
+def case(name, customers, alert, hit, exp, code=None, accounts=(), onboarding=(), kyc=(), notes=(), search=(), says=()):
+    CASES.append(dict(name=name, customers=customers, alert=alert, hit=hit, exp=exp, code=code, says=list(says), accounts=list(accounts),
                       onboarding=list(onboarding), kyc=list(kyc), notes=list(notes), search=list(search)))
 
 
@@ -119,6 +119,11 @@ case("list_numbers_not_ages", [cust("CUS-000024", "Rob James", "1955-01-01")], a
 case("month_only_report", [cust("CUS-000025", "Jim Okafor", "1993-03-11")], alert("A-000025", "Jim Okafor", "ACC-25"),
      hit("A-000025", "James Okafor", countries=["United Kingdom"], notes="According to Regulator X; January 1997: James Okafor was fined."),
      "REVIEW", accounts=[acc("ACC-25", "CUS-000025")])
+# 24 two people fit and both are cleared: the reason names each one's own countries
+case("ambiguous_cleared_names_each_country", [cust("CUS-000026", "Ada Eze", "1980-01-01", nat="France", res="FR"),
+                                             cust("CUS-000027", "Ada Eze", "1985-02-02", nat="Chile", res="CL")],
+     alert("A-000026", "Ada Eze"), hit("A-000026", "Ada Eze", countries=["Japan"]), "DIFFERENT_ENTITY", "LOCATION_MISMATCH",
+     says=["CUS-000026, linked to France", "CUS-000027, linked to Chile"])
 
 fails = 0
 for c in CASES:
@@ -130,7 +135,7 @@ for c in CASES:
     out = os.path.join(d, "out.jsonl")
     subprocess.run([RUN, d, out], check=True, stderr=subprocess.DEVNULL)
     r = json.loads(open(out).readline())
-    ok = r["decision"] == c["exp"] and (c["code"] is None or r["reason_code"] == c["code"])
+    ok = r["decision"] == c["exp"] and (c["code"] is None or r["reason_code"] == c["code"]) and all(x in r["reason"] for x in c["says"])
     fails += not ok
     print(("PASS " if ok else "FAIL ") + c["name"], "->", r["decision"], r["reason_code"], "" if ok else "| " + r["reason"])
     shutil.rmtree(d)
