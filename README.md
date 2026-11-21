@@ -26,7 +26,8 @@
 - **Python standard library only:** no model, no API key, no network, $0 per run, about 16 s for 819 hits on one laptop core.
 - **Synthetic shadow sets** (559 hits each, seeds 7 and 21, formats dev never shows): score 0.965, 547/559 right, **0 unsafe**.
 - **No rewording moves a decision towards clearing:** `tools/perturb.py` rewrites names, dates, ages and countries across the data room; every change it causes moves towards `REVIEW`.
-- **Deterministic:** byte-identical output across runs and any `PYTHONHASHSEED`.
+- **Deterministic:** byte-identical output across runs and any `PYTHONHASHSEED`; 5 fresh-clone runs with different seeds give the same bytes.
+- **Robustness under perturbation** (external test, 8 perturbed copies of dev): stripping accents, swapping name order, upper-casing hit, customer and KYC names, and rewriting ISO DOBs as "24 August 1994" changed **0 of 819** decisions. Deleting one letter in long name parts moved 19 decisions, 18 of them towards `REVIEW`; the one move to a clear is being fixed.
 
 Practice and shadow scores are development feedback, not proof of unseen-set performance.
 
@@ -63,11 +64,11 @@ On the full dev set the system takes 589 of 819 hits (72%) off the analyst queue
 >
 > - **50 labels is a small sample.** 50/50 is a sanity check, not an accuracy estimate for the unseen set.
 > - **Single-signal clears.** Counted from the reason codes in `output/dev.jsonl`: **217 of the 464 clears rest on location alone** (`LOCATION_MISMATCH` is the lowest-priority ground, so it is the code only when no other contradiction exists), and **79 rest on a verified name alone** (`NAME_MISMATCH_VERIFIED` with no country contradiction). Both follow the policy literally; some, such as bank branches abroad or names sharing a single part, deserve sampled QA. Examples are listed in [system/README.md](system/README.md#honest-limitations).
-> - **Q: Why is `DOUBTFUL_LINK_REVIEW` off?** A: The practice labels clear exactly the pattern it would send to review (a verified name that differs from the record name on the customer’s own check); switched on, it moves 60 dev clears to review and practice falls to 46/50 (score 0.889, measured above).
+> - **Q: Why is `DOUBTFUL_LINK_REVIEW` off?** A: Policy principle 4 says verified beats declared: the approved check’s legal name outranks the record name, so a verified name that disagrees with the hit clears it. The practice labels read the policy the same way. A bank that wants to be stricter can flip one line in `decide.py`; that moves about 60 dev clears to review and adds no clears (practice then 46/50, score 0.889, measured above).
 
 ## 30-second quickstart
 
-Needs Python 3.11 or newer; nothing to install.
+Needs Python 3.11 or newer; nothing to install. Tested on Python 3.11 and 3.13.5.
 
 ```sh
 git clone https://github.com/Akin-Genc0/Track-2 && cd Track-2
@@ -89,7 +90,14 @@ python3 tests/test_packaging.py
 python3 -m py_compile system/*.py
 ```
 
-`system/run` works from any working directory and with spaces in either path. It reads only the data folder it is given and writes one JSON line per hit. If the data folder or its `hits.jsonl` is missing, it stops with exit code 2 and a clear message instead of writing an empty file.
+**Check determinism yourself:** run it twice and compare hashes (on macOS use `shasum -a 256`). The two hashes must match; we don't print a hash here because the output changes as fixes land.
+
+```sh
+system/run /path/to/dev /tmp/run1.jsonl && system/run /path/to/dev /tmp/run2.jsonl
+sha256sum /tmp/run1.jsonl /tmp/run2.jsonl output/dev.jsonl
+```
+
+`system/run` works from any working directory and with spaces in either path. It reads only the data folder it is given and writes one JSON line per hit. If the data folder or its `hits.jsonl` is missing, or `hits.jsonl` has no readable hit records, it stops with exit code 2 and a clear message and writes no output file.
 
 ## How it works
 
