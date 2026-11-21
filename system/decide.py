@@ -22,7 +22,7 @@ def dob_swapped(cd, hd):
             and cd[1] != cd[2] and cd[1] == hd["d"] and cd[2] == hd["m"])
 
 
-def dob_contradicted(cd, hd):
+def _dob_contradicted(cd, hd):
     """Customer DOB cd=(y,m,d) contradicts hit birth date hd? (more than 1 year outside, or same year and month/day differ)"""
     if dob_swapped(cd, hd):
         return False
@@ -153,9 +153,19 @@ class Decider:
                         [src])
         # dob
         hit_dobs = [d for d in hit.dobs if not prof.company or d["kind"] == "field"]
+
+        def dob_contradicted(cd, hd, src=None):
+            """A customer date whose day and month could be swapped ('03/04/1980') contradicts only if both readings do."""
+            if (cd, src) in prof.dm_ambiguous and cd[1] and cd[2]:
+                return _dob_contradicted(cd, hd) and _dob_contradicted((cd[0], cd[2], cd[1]), hd)
+            return _dob_contradicted(cd, hd)
         dob_agree = False
         dob_agree_src = []
         swapped = [(cd, src, hd) for cd, src in dobs for hd in hit_dobs if dob_swapped(cd, hd)]
+        # read day first the customer's dates would contradict the hit, but one of them could be read month first
+        dm_saved = [(cd, src) for cd, src in dobs if (cd, src) in prof.dm_ambiguous] if hit_dobs and dobs and \
+            all(all(_dob_contradicted(cd, hd) for hd in hit_dobs) for cd, _ in dobs) and \
+            not all(all(dob_contradicted(cd, hd, s) for hd in hit_dobs) for cd, s in dobs) else []
 
         def search_basis(hds):
             """Why a search result's birth date counts: its query, listing phrase and a hit country all matched."""
@@ -166,10 +176,10 @@ class Decider:
             cs = sorted({c for hd in hds for c in hd.get("ctry", ())})
             return (f" (from {and_join(ids)}, used only because the search query, the listing phrase '{hit.phrase}' and "
                     f"the hit's country {and_join(cs)} all matched)")
-        if hit_dobs and dobs and dob_disputed and all(all(dob_contradicted(cd, hd) for hd in hit_dobs) for cd, _ in dobs):
+        if hit_dobs and dobs and dob_disputed and all(all(dob_contradicted(cd, hd, s) for hd in hit_dobs) for cd, s in dobs):
             dob_blocked.append("DOB_MISMATCH")
         elif hit_dobs and dobs:
-            if all(all(dob_contradicted(cd, hd) for hd in hit_dobs) for cd, _ in dobs):
+            if all(all(dob_contradicted(cd, hd, s) for hd in hit_dobs) for cd, s in dobs):
                 d, src = dobs[0]
                 ev = [s for _, s in dobs] + sorted({hd["src"] for hd in hit_dobs if hd["src"]})
                 exact = all(hd["m"] and len(hd["years"]) == 1 for hd in hit_dobs)
@@ -328,7 +338,12 @@ class Decider:
             why.append(f"Note {and_join(dob_disputed)} says the customer's date of birth on file is wrong, so the record date of birth "
                        f"{fmt_date(d)} ({src}) is not used to clear the hit against its {hit.dob_text()}.")
             ev += [e for e in dob_disputed + [src] if e not in ev]
-        if swapped and not dob_blocked:
+        if dm_saved and not dob_blocked:
+            cd, src = dm_saved[0]
+            why.append(f"The customer's date of birth ({src}) is written with day and month both 12 or less, so it could be {fmt_date(cd)} "
+                       f"or {fmt_date((cd[0], cd[2], cd[1]))}; the hit's {hit.dob_text()} does not contradict both readings, so it is not used to clear the hit.")
+            ev += [e for e in [src] if e not in ev]
+        elif swapped and not dob_blocked:
             cd, src, hd = swapped[0]
             why.append(f"The customer's date of birth {fmt_date(cd)} ({src}) and the hit's {hit.dob_text()} have the same year with the day "
                        "and month swapped, a common data-entry error, so they are not treated as a contradiction"

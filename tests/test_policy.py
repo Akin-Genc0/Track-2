@@ -170,6 +170,23 @@ case("unplaced_country_says_why", [cust("CUS-000038", "Ali Rahimi", None)], aler
 case("misspelt_variant_member_matches_group", [cust("CUS-000039", "Muammad Usman", "1994-08-24", nat="Nigeria", res="NG")],
      alert("A-000039", "Muammad Usman", "ACC-39"), hit("A-000039", "Usman, Mohammed", dobs=["1994"], countries=["Pakistan"]), "REVIEW",
      accounts=[acc("ACC-39", "CUS-000039")])
+# 35 a customer DOB '03/04/1980' could be 3 April or 4 March: it may contradict a hit only if both readings do,
+# so a hit dated March 1980 is not cleared on the month (and the day-first reading does not confirm it either)
+case("customer_dob_ambiguous_day_month", [cust("CUS-000040", "Pavel Orlov", "03/04/1980")], alert("A-000040", "Pavel Orlov", "ACC-40"),
+     hit("A-000040", "Orlov, Pavel", dobs=["1980-03"], countries=["United Kingdom"]), "REVIEW", accounts=[acc("ACC-40", "CUS-000040")],
+     says=["could be 1980-04-03 or 1980-03-04"])
+# 36 ... but '25/04/1980' can only be 25 April and still contradicts March 1980
+case("customer_dob_unambiguous_day_first", [cust("CUS-000041", "Pavel Orlova", "25/04/1980")], alert("A-000041", "Pavel Orlova", "ACC-41"),
+     hit("A-000041", "Orlova, Pavel", dobs=["1980-03"], countries=["United Kingdom"]), "DIFFERENT_ENTITY", "DOB_MISMATCH", accounts=[acc("ACC-41", "CUS-000041")])
+# 37 the same holds for a verified DOB from a KYC check ...
+case("kyc_dob_ambiguous_day_month", [cust("CUS-000042", "Pavel Orlik", "1980-04-03")], alert("A-000042", "Pavel Orlik", "ACC-42"),
+     hit("A-000042", "Orlik, Pavel", dobs=["1980-03"], countries=["United Kingdom"]), "REVIEW", accounts=[acc("ACC-42", "CUS-000042")],
+     onboarding=[onb("ACC-42", "CUS-000042", "APP-42")], kyc=[chk("KYC-42", "APP-42", "Pavel Orlik", "03/04/1980", "United Kingdom", "approved", "2024-01-01")])
+# 38 ... and for a DOB read from an identity-verification note
+case("note_dob_ambiguous_day_month", [cust("CUS-000043", "Pavel Orlin", "1980-04-03", email="po@x.example")], alert("A-000043", "Pavel Orlin", "ACC-43"),
+     hit("A-000043", "Orlin, Pavel", dobs=["1980-03"], countries=["United Kingdom"]), "REVIEW", accounts=[acc("ACC-43", "CUS-000043")],
+     notes=[{"note_id": "NOTE-43", "requester_email": "po@x.example", "created_at": "2024-01-01", "channel": "kyc",
+             "text": "Onfido verified the passport of PAVEL ORLIN (DOB 03/04/1980) from the United Kingdom."}])
 
 fails = 0
 for c in CASES:

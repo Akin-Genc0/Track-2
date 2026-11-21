@@ -4,7 +4,7 @@ One person's facts from all their records: names, declared and verified DOB, ver
 Verified beats declared: the most recent APPROVED identity check (KYC provider or onboarding note) wins."""
 import re
 from data import as_text
-from textutil import parse_date, find_dates, fold, entity_kind, placeholder_dob, approved_result
+from textutil import parse_date, parse_dob, day_month_ambiguous, find_dates, fold, entity_kind, placeholder_dob, approved_result
 from countries import norm_country, countries_in_text, countries_in_value
 
 _DOC_RE = re.compile(r"passport|national id|identity card|id card|identity document|driv(?:ing|er'?s?) licen[cs]e|residence permit|registry extract|"
@@ -136,8 +136,11 @@ def parse_id_note(note):
             continue
         if births and dist > 60:
             continue          # with a birth keyword present, a full date far from it is some other date
-        cand.append((dist, -s, d))
-    dob = sorted(cand)[0][2] if cand else None
+        cand.append((dist, -s, d, e))
+    best = sorted(cand)[0] if cand else None
+    raw_dob = best[2] if best else None
+    dob = raw_dob
+    dob_ambiguous = bool(best) and day_month_ambiguous(t[-best[1]:best[3]])   # '03/04/1980': 3 April or 4 March
     # check date
     check_date = created
     if not check_date:
@@ -149,7 +152,7 @@ def parse_id_note(note):
     t2 = t if not name_span else t[:name_span[0]] + " " + t[name_span[1]:]
     ctry = countries_in_text(t2)
     return {"id": as_text(note.get("note_id")), "name": name, "dob": dob, "country": ctry[0] if ctry else None, "countries": ctry,
-            "date": check_date, "approved": approved, "ambiguous": ambiguous, "source": "note", "title_runs": title_runs}
+            "date": check_date, "dob_ambiguous": dob_ambiguous, "approved": approved, "ambiguous": ambiguous, "source": "note", "title_runs": title_runs}
 
 
 class Profile:
@@ -175,10 +178,13 @@ class Profile:
                     self.record_names.append((v, r))
         # declared DOBs
         self.declared_dobs = []
+        self.dm_ambiguous = set()     # (date, source) read day first whose day and month could be swapped
         for r in self.records:
-            d = parse_date(C[r].get("dob"))
+            d, amb = parse_dob(C[r].get("dob"))
             if d and not placeholder_dob(d):
                 self.declared_dobs.append((d, r))
+                if amb:
+                    self.dm_ambiguous.add((d, r))
         # countries with provenance
         self.countries = {}
 
@@ -201,7 +207,8 @@ class Profile:
         for r in self.records:
             for k in idx.kyc_checks_for(r):
                 checks.append({"id": as_text(k.get("check_id")), "name": strip_titles(as_text(k.get("verified_name"))) or None,
-                               "dob": None if placeholder_dob(parse_date(k.get("verified_dob"))) else parse_date(k.get("verified_dob")), "country": norm_country(k.get("document_country"), codes_any_case=True),
+                               "dob": None if placeholder_dob(parse_dob(k.get("verified_dob"))[0]) else parse_dob(k.get("verified_dob"))[0],
+                               "dob_ambiguous": parse_dob(k.get("verified_dob"))[1], "country": norm_country(k.get("document_country"), codes_any_case=True),
                                "date": parse_date(k.get("checked_at")),
                                "approved": approved_result(as_text(k.get("result"))), "source": "kyc"})
         self.residence_notes = []
@@ -259,6 +266,8 @@ class Profile:
         self.verified_name = next(((c["name"], c["id"]) for c in approved if c["name"] and plausible(c)), None)
         self.verified_name_weak = bool(next((c.get("weak_name") for c in approved if c["name"] and plausible(c)), False))
         self.verified_dob = next(((c["dob"], c["id"]) for c in approved if c["dob"]), None)
+        if self.verified_dob and next(c.get("dob_ambiguous") for c in approved if c["dob"]):
+            self.dm_ambiguous.add(self.verified_dob)
 
     def best_country_sources(self, c):
         """Minimal citation for a country: the latest approved identity check, else system-of-record records, else notes."""

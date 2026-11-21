@@ -82,6 +82,25 @@ def parse_date(s):
     return ds[0][2] if ds else None
 
 
+_NUMERIC_DATE = re.compile(r"\s*(\d{1,2})[/.-](\d{1,2})[/.-](?:\d{4}|\d{2})\s*")
+
+
+def day_month_ambiguous(text):
+    """'03/04/1980' could be 3 April or 4 March: both numbers 12 or less and different."""
+    m = _NUMERIC_DATE.fullmatch(text or "")
+    return bool(m and int(m.group(1)) <= 12 and int(m.group(2)) <= 12 and m.group(1).lstrip("0") != m.group(2).lstrip("0"))
+
+
+def parse_dob(s):
+    """parse_date for a birth date -> (date, ambiguous). The date is read day first as everywhere else; ambiguous is True
+    when its day and month could be swapped ('03/04/1980'), so it may contradict a hit only if both readings do."""
+    if s is None:
+        return None, False
+    s = str(s).strip()
+    ds = find_dates(s)
+    return (ds[0][2], day_month_ambiguous(s[ds[0][0]:ds[0][1]])) if ds else (None, False)
+
+
 def placeholder_dob(d):
     """Filler birth dates (1900-01-01, 1901-01-01, anything before 1901) carry no information."""
     return bool(d) and (d[0] < 1901 or (d[0] == 1901 and d[1] in (None, 1) and d[2] in (None, 1)))
