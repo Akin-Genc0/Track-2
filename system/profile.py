@@ -12,7 +12,27 @@ _DOC_RE = re.compile(r"passport|national id|identity card|id card|identity docum
                      r"company registry|registration certificate|certificate of incorporation|document|\bid\b", re.I)
 _VERIFY_RE = re.compile(r"verif|validat|confirm|approv|clear|vet|pass|check|screen|match|authenticat|onboard|kyc|identity", re.I)
 _NEG_RE = re.compile(r"reject|fail|declin|expir|unsuccess|could not|couldn't|unable|not (?:be )?(?:verified|approved|confirmed|validated|accepted)|"
-                     r"did not|didn't|mismatch|denied|invalid|fraudulent|forged|suspicious|refused|void|blurr|illegible|not pass|no longer valid|pending|awaiting|incomplete", re.I)
+                     r"did not|didn't|mismatch|denied|invalid|fraudulent|forged|suspicious|refused|void|blurr|illegible|not pass|no longer valid|pending|awaiting|incomplete|"
+                     r"\bconsider\b|caution|\brefer(?:red)?\b|flagged|manual review|resubmi|\bon hold\b|review required|not clear", re.I)
+# an outcome word that survives once the negative phrases are removed: with a negative too, the note is ambiguous
+_POS_RE = re.compile(r"\b(?:approved|passed|verified|cleared|successful(?:ly)?|accepted)\b", re.I)
+# the note is about someone else on the same email (families share emails): not identity evidence for this person
+_REL_RE = re.compile(r"\b(?:spouse|wife|husband|son|daughter|mother|father|partner|child|children|sibling|brother|sister|guardian|"
+                     r"dependa?nt|minor|joint (?:account )?holder|on behalf of)\b", re.I)
+_PARTICLES = {"da", "de", "del", "della", "di", "do", "dos", "das", "du", "van", "von", "der", "den", "ter", "bin", "ibn", "bint",
+              "al", "el", "la", "le", "y", "e"}
+TITLES = {"mr", "mrs", "ms", "miss", "mx", "dr", "prof", "sir", "dame", "sheikh", "shaikh", "haji", "hajji", "alhaji", "chief", "eng", "hon", "rev"}
+_ISSUE_BEFORE = re.compile(r"(?i)\b(?:issued?|issuance|expir\w*|valid\w*|opened|onboard\w*|checked|dated)\W+(?:\w+\W+){0,2}$")
+
+
+def strip_titles(name):
+    """'MR AHMED' -> 'AHMED': a title is not a name part."""
+    if not name:
+        return name
+    toks = name.split()
+    while toks and fold(toks[0]).strip(".") in TITLES:
+        toks = toks[1:]
+    return " ".join(toks) or None
 _BIRTH_RE = re.compile(r"born|\bdob\b|d\.o\.b|date of birth|birth ?date|birthday", re.I)
 _TITLE_STOP = {"sumsub", "onfido", "veriff", "persona", "jumio", "trulioo", "experian", "equifax", "lexisnexis", "kyc", "dob", "id",
                "customer", "client", "the", "on", "in", "for", "per", "result", "verification", "identity", "passport", "national",
@@ -40,26 +60,35 @@ def parse_id_note(note):
     is_id = (ch == "kyc" and (_DOC_RE.search(t) or _VERIFY_RE.search(t))) or (_DOC_RE.search(t) and _VERIFY_RE.search(t) and _BIRTH_RE.search(t))
     if not is_id:
         return None
-    approved = not _NEG_RE.search(t)
+    if _REL_RE.search(t):
+        return None
+    neg = _NEG_RE.search(t)
+    approved = not neg
+    ambiguous = bool(neg and _POS_RE.search(_NEG_RE.sub(" ", t)))
     created = parse_date(note.get("created_at"))
     dates = find_dates(t)
     # name: longest run of upper-case tokens
-    best, cur = [], []
+    best, cur, pend = [], [], []
     for m in re.finditer(r"\S+", t):
         tok = re.sub(r"['’]s$", "", m.group(0).strip(",.;:()\""))
         core = re.sub(r"[^\w/'’-]", "", tok)
         letters = [ch2 for ch2 in core if ch2.isalpha()]
         is_caps = (letters and all(c.isupper() for c in letters) and len(letters) >= 2 and core.upper() not in _CAPS_STOP) or core in ("N/A", "NA") or re.fullmatch(r"0+", core or "x")
         if is_caps:
+            cur.extend(pend)
             cur.append((m.start(), m.end(), tok))
+            pend = []
+        elif cur and tok == m.group(0) and tok in _PARTICLES:
+            pend.append((m.start(), m.end(), tok))    # 'ANA MARIA da SILVA': a lower-case particle joins two caps runs
+            continue
         else:
             if len(cur) > len(best):
                 best = cur
-            cur = []
+            cur, pend = [], []
         if tok != m.group(0).rstrip() and m.group(0).rstrip()[-1:] in ";:)" and cur:
             if len(cur) > len(best):
                 best = cur
-            cur = []
+            cur, pend = [], []
     if len(cur) > len(best):
         best = cur
     name, name_span = None, None
@@ -86,32 +115,40 @@ def parse_id_note(note):
             title_runs.append(" ".join(cur2[:5]))
     # DOB: a date that is not the check date, closest to a birth keyword
     cand = []
+    births = list(_BIRTH_RE.finditer(t))
     for s, e, d in dates:
         if created and d == created:
             continue
-        if created and d[1] is None and d[0] == created[0] and not _BIRTH_RE.search(t):
+        if created and d[1] is None and d[0] == created[0] and not births:
             continue
-        dist = min([abs(s - k.end()) for k in _BIRTH_RE.finditer(t)] + [abs(e - k.start()) for k in _BIRTH_RE.finditer(t)] + [10 ** 6])
+        # dates after a birth keyword come first; one before it pays a penalty ("issued 2019-02-03, DOB: March 1968")
+        dist = min([s - k.end() for k in births if s >= k.end()] + [k.start() - e + 10 for k in births if e <= k.start()] + [10 ** 6])
+        if dist > 12 and _ISSUE_BEFORE.search(t[max(0, s - 30):s]):
+            continue          # an issue / expiry / opening / check date, not a birth date
         if not (d[1] and d[2]) and dist > 30:
             continue
-        cand.append((dist, s, d))
+        if births and dist > 60:
+            continue          # with a birth keyword present, a full date far from it is some other date
+        cand.append((dist, -s, d))
     dob = sorted(cand)[0][2] if cand else None
     # check date
     check_date = created
     if not check_date:
         others = [d for s, e, d in dates if d != dob and d[1] and d[2]]
         check_date = others[0] if others else None
+    if dob and check_date and check_date[0] - dob[0] < 16:
+        dob = None            # a person under 16 at the check: the parse picked some other date
     # document country (outside the name span)
     t2 = t if not name_span else t[:name_span[0]] + " " + t[name_span[1]:]
     ctry = countries_in_text(t2)
     return {"id": as_text(note.get("note_id")), "name": name, "dob": dob, "country": ctry[0] if ctry else None,
-            "date": check_date, "approved": approved, "source": "note", "title_runs": title_runs}
+            "date": check_date, "approved": approved, "ambiguous": ambiguous, "source": "note", "title_runs": title_runs}
 
 
 class Profile:
     """Facts about one customer person; every fact carries its source record IDs."""
 
-    def __init__(self, idx, person):
+    def __init__(self, idx, person, promote_ambiguous=False):
         self.idx = idx
         C = idx.room.customers
         self.primary = person["primary"]
@@ -147,7 +184,7 @@ class Profile:
         checks = []
         for r in self.records:
             for k in idx.kyc_checks_for(r):
-                checks.append({"id": as_text(k.get("check_id")), "name": as_text(k.get("verified_name")) or None,
+                checks.append({"id": as_text(k.get("check_id")), "name": strip_titles(as_text(k.get("verified_name"))) or None,
                                "dob": parse_date(k.get("verified_dob")), "country": norm_country(k.get("document_country")),
                                "date": parse_date(k.get("checked_at")),
                                "approved": as_text(k.get("result")).lower() in APPROVED, "source": "kyc"})
@@ -161,12 +198,16 @@ class Profile:
                 seen_notes.add(nid)
                 p = parse_id_note(n)
                 if p is not None:
+                    p["name"] = strip_titles(p["name"])
                     checks.append(p)
                     continue
                 for c in countries_in_text(as_text(n.get("text"))):
                     add(c, nid)
                     self.residence_notes.append((c, nid))
-        approved = [c for c in checks if c["approved"]]
+        # a note with both an approval and a negative word is ambiguous: it never supplies clearing facts, but
+        # screen.py re-decides with it counted as approved, and if that stops the clear the hit goes to REVIEW
+        self.ambiguous = [c for c in checks if c.get("ambiguous")]
+        approved = [c for c in checks if c["approved"] or (promote_ambiguous and c.get("ambiguous"))]
         for c in approved:
             add(c["country"], c["id"])
         key = lambda c: ((c["date"] or (0, 0, 0))[0], (c["date"] or (0, 0, 0))[1] or 0, (c["date"] or (0, 0, 0))[2] or 0, c["id"])

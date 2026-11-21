@@ -41,7 +41,16 @@ def run(folder, out_path):
                     key = p["primary"]
                     if key not in profile_cache:
                         profile_cache[key] = Profile(idx, p)
-                    r = decider.decide_person(profile_cache[key], hf, alert)
+                    prof = profile_cache[key]
+                    r = decider.decide_person(prof, hf, alert)
+                    if r["decision"] == "DIFFERENT_ENTITY" and prof.ambiguous:
+                        # a note that both approves and rejects must not let a clear stand if its facts would stop it
+                        r2 = decider.decide_person(Profile(idx, p, promote_ambiguous=True), hf, alert)
+                        if r2["decision"] != "DIFFERENT_ENTITY":
+                            ids = [c["id"] for c in prof.ambiguous]
+                            r = {"decision": "REVIEW", "reason_code": "INSUFFICIENT_DATA", "evidence": ids + [e for e in r["evidence"] if e not in ids],
+                                 "reason": f"{r['reason']} However the identity note {', '.join(ids)} both approves and rejects a check, and if it "
+                                           f"counts as approved the hit is no longer contradicted, so a person must review it."}
                     results.append((p, r))
                 if len(results) == 1:
                     p, r = results[0]
