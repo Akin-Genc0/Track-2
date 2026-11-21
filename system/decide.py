@@ -128,7 +128,8 @@ class Decider:
                 if all(a < 16 for a, _, _ in ages):
                     a, d, src = max(ages, key=lambda x: x[0])
                     contra["TEMPORAL_IMPOSSIBILITY"] = (
-                        f"The customer was born {'in' if d[1] is None else 'on'} {fmt_date(d)} ({src}), so they were at most {max(a, 0)} when the hit's profile reports activity on {fmt_date(r)}.",
+                        f"The customer was born {'in' if d[1] is None else 'on'} {fmt_date(d)} ({src}), so they "
+                        + (f"were at most {a}" if a >= 0 else "were not yet born") + f" when the hit's profile reports activity on {fmt_date(r)}.",
                         [src])
         # dob
         hit_dobs = [d for d in hit.dobs if not prof.company or d["kind"] == "field"]
@@ -144,6 +145,10 @@ class Decider:
                         "search results": "search results give its date of birth as" if exact else "search results put its birth year at"}.get(hit.dob_source, "birth date is")
                 lbl = "incorporation date" if prof.company else "date of birth"
                 contra["DOB_MISMATCH"] = (f"The customer's {lbl} is {fmt_date(d)} ({src}) but the hit's {what} {hit.dob_text()}.", ev)
+                # after the timing sentence, which already gives the customer's date: say only what the hit's date adds
+                hit_src = {"profile notes": "date of birth in its profile notes",
+                           "search results": "date of birth in search results"}.get(hit.dob_source, "listed " + lbl)
+                dob_also = f"The customer's {lbl} also contradicts the hit's {hit_src}, {hit.dob_text()}."
             else:
                 for cd, src in dobs:
                     agreeing = [hd for hd in hit_dobs if dob_agrees(cd, hd)]
@@ -217,7 +222,13 @@ class Decider:
                     out.append(f"the customer is linked to {', '.join(sorted(cust_c))} and the hit to {', '.join(sorted(hit_c))}")
             if code is None:
                 return f"Compared: {and_join(out)}."
-            return f"Apart from this, {and_join(out)}; " + (tail or f"{DECIDES[code]} is enough to clear the hit under the policy.")
+            if tail:
+                return f"{tail[0].upper()}{tail[1:-1]}; for context, {and_join(out)}."
+            lead = f"{DECIDES[code][0].upper()}{DECIDES[code][1:]} alone clears the hit under the policy"
+            if code == "LOCATION_MISMATCH" and not prof.company:
+                # why a country difference is enough: the name and date of birth do not both agree (principle 6)
+                return f"{lead}, because the name and date of birth do not both agree: {and_join(out)}."
+            return f"{lead}; the other facts do not change that: {and_join(out)}." 
 
         if contra:
             codes = [c for c in CLEAR_PRIORITY if c in contra]
@@ -226,7 +237,8 @@ class Decider:
                 for e in contra[c][1]:
                     if e and e not in ev:
                         ev.append(e)
-            return dict(explain({"sentences": [contra[c][0] for c in codes[:3]], "context": [compared(codes[0])], "evidence": ev}),
+            shown = [dob_also if c == "DOB_MISMATCH" and "TEMPORAL_IMPOSSIBILITY" in codes[:3] else contra[c][0] for c in codes[:3]]
+            return dict(explain({"sentences": shown, "context": [compared(codes[0])], "evidence": ev}),
                         decision="DIFFERENT_ENTITY", reason_code=codes[0])
 
         loc_src = sorted({s for c in shared for s in prof.countries[c]})

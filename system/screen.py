@@ -8,6 +8,7 @@ try:
     from profile import Profile
     from hitfacts import HitFacts, build_search_index
     from decide import Decider
+    from explain import OUTCOME, explain_candidates, explain_each_cleared
 except Exception as exc:
     MODULE_ERROR = type(exc).__name__
 
@@ -118,12 +119,15 @@ def run(folder, out_path):
                     if len(decs) == 1:
                         r0 = results[0][1]
                         res = dict(r0, customer_record_id="AMBIGUOUS", evidence=ev,
-                                   reason=f"{len(results)} different people in the system of record fit the alert ({ids}); each leads to {r0['decision']}. " + r0["reason"])
+                                   reason=f"{len(results)} different people in the system of record fit the alert ({ids}), and the hit is "
+                                          f"{OUTCOME[r0['decision']]} for each of them. " + r0["reason"])
+                        if r0["decision"] == "DIFFERENT_ENTITY":
+                            res.update(explain_each_cleared([(p["primary"], r) for p, r in results]))
                     else:
-                        summary = "; ".join(f"{p['primary']}: {r['decision']} ({r['reason_code']})" for p, r in results)
-                        res = {"decision": "REVIEW", "reason_code": "AMBIGUOUS_CUSTOMER_RECORD", "customer_record_id": "AMBIGUOUS",
-                               "evidence": ev,
-                               "reason": f"{len(results)} different people in the system of record fit the alert ({ids}) and they lead to different decisions: {summary}. A person must decide which customer was screened."}
+                        res = dict(explain_candidates([(p["primary"], r) for p, r in results],
+                                                      f"{len(results)} different people in the system of record fit the alert ({ids}) and they "
+                                                      "lead to different decisions, so a person must decide which customer was screened"),
+                                   decision="REVIEW", reason_code="AMBIGUOUS_CUSTOMER_RECORD", customer_record_id="AMBIGUOUS")
             if res["decision"] == "DIFFERENT_ENTITY" and near:
                 # a clear must also hold for anyone the screened city alone excluded ('Munich' vs 'München')
                 held = []
@@ -135,11 +139,13 @@ def run(folder, out_path):
                         held.append((p, r))
                 if held:
                     ids = ", ".join(p["primary"] for p, _ in held)
-                    summary = "; ".join(f"{p['primary']}: {r['decision']} ({r['reason_code']})" for p, r in held)
-                    res = {"decision": "REVIEW", "reason_code": "AMBIGUOUS_CUSTOMER_RECORD", "customer_record_id": "AMBIGUOUS",
-                           "evidence": list(res["evidence"]) + [e for _, r in held for e in r["evidence"] if e not in res["evidence"]],
-                           "reason": f"The customer who fits the alert is cleared ({res['reason_code']}), but {ids} fits the screened name and "
-                                     f"details except the city spelling and leads to {summary}. A person must decide which customer was screened."}
+                    first = [(res["customer_record_id"], res)] if res.get("customer_record_id") not in (None, "", "AMBIGUOUS") else []
+                    ev0 = list(res["evidence"])
+                    res = dict(explain_candidates(first + [(p["primary"], r) for p, r in held],
+                                                  f"The customer who fits the alert is cleared, but {ids} also fits the screened name and details "
+                                                  "except the spelling of the city, so a person must decide which customer was screened"),
+                               decision="REVIEW", reason_code="AMBIGUOUS_CUSTOMER_RECORD", customer_record_id="AMBIGUOUS")
+                    res["evidence"] = ev0 + [e for e in res["evidence"] if e not in ev0]
             if unavailable and res["decision"] == "DIFFERENT_ENTITY":
                 res = fallback("Required sources were unavailable or partly unreadable: " + ", ".join(unavailable),
                                res.get("customer_record_id"))
