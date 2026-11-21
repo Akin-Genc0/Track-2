@@ -1,5 +1,19 @@
 # Reason-quality audit
 
+> **Current status (re-checked on the final tree, `output/dev.jsonl` byte-identical to main c0b44f5).** Everything below this box is the
+> historical audit taken at a22cbf5, before the renderer was wired in; read it as the record of what was found, not as open defects.
+>
+> - The renderer it proposed is integrated as `system/explain.py` ("Integration (not applied)" below is history). `tools/check_submission.py`
+>   passes: every one of the 819 reasons has 2–4 sentences (358 were a single sentence at a22cbf5), and every conclusive decision cites evidence.
+> - Practice labels: 50/50 decisions, reason codes and customer records right; evidence identical to the reference on all 50 (Jaccard 1.00).
+>   22/50 reason texts equal the reference word for word: the added context sentence is the usual difference, by design.
+> - **Fixed:** one-sentence reasons (H-AC1114, H-BD709E now have two and three sentences); H-2B5507 now prints each of the three
+>   candidates' own DOB comparison; temporal prose no longer prints an age of 0 (0 occurrences in the dev output).
+> - **Kept on purpose:** clears cite the evidence for every contradiction they list, not only the chosen code (H-5EEC5A still cites
+>   KYC-30794E). The references do the same; citing only the chosen code lowered practice evidence agreement from 1.00 to 0.96.
+> - **Still open (wording only, no decision effect):** H-0F3C96 lists each candidate's decision and code but not the facts behind them;
+>   H-8A1D28 says the date of birth "cannot be compared" without saying which side is missing.
+
 Baseline: origin/bot/core-system at a22cbf5, 819 rebuilt predictions. Rebased and rechecked on 2026-11-21. All 50 practice labels plus 10 deterministic supplements (first missing code, then earliest remaining hits in output order): 60 total, all three decisions and all 11 codes. References are guidance, not proof that every extra citation is wrong. No unseen accuracy claims.
 
 ## Findings

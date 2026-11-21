@@ -1,5 +1,10 @@
 # Clearsight: spot check of the hardened dev output
 
+> **Historical spot check, taken at 45ddc8c (465 clears / 229 reviews).** Re-checked on the final tree (464 / 125 / 230, output
+> byte-identical to main c0b44f5): all 30 sampled hits keep the decision described here (20 clears, 10 reviews). The three
+> verified-name clears it flags are discussed under "Shared-account KYC checks" in [system/README.md](system/README.md): the
+> `DOUBTFUL_LINK_REVIEW` switch that would send them to review stays off because the practice labels clear the same pattern.
+
 **Result:** Prioritise the three verified-name clears below for a customer-to-KYC linkage check. Six country-only clears and one search-derived DOB clear merit secondary QA. These are plausible risks, not ten known wrong answers. None of the ten sampled reviews had enough evidence to decide safely.
 
 **Sample:** `output/dev.jsonl` at `45ddc8c` (465 clears, 229 reviews). Within each decision, rank hits by SHA-256 of UTF-8 `edge-audit-2026-11-21-v1|<decision>|<hit_id>`, ascending; take the first 20 clears and first 10 reviews. Reusing the seed after hardening lets us compare versions without choosing cases by outcome. Compared output with the workbook-derived dev records. IDs below refer to those files. This sample is not an estimate of unseen accuracy.
