@@ -42,6 +42,13 @@
     disagree: '<path d="M7 7h10M7 7l3-3M7 7l3 3M17 17H7M17 17l-3-3M17 17l-3 3"/>',
     scan: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8M8 10.5h5M10.5 8v5"/>',
     note: '<path d="M5 4h10l4 4v12H5z"/><path d="M9 12h6M9 16h4"/>',
+    map: '<circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="5" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M7.5 12h4l5-6.5M11.5 12l5 6.5"/>',
+    alert: '<path d="M12 4 3 19h18z"/><path d="M12 10v4M12 17h.01"/>',
+    link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+    person: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.5 3.6-5.5 7-5.5s6.2 2 7 5.5"/>',
+    idcard: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6 16c.6-1.5 1.7-2 3-2s2.4.5 3 2M14 10h4M14 13h3"/>',
+    globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z"/>',
+    list: '<path d="M12 3 4 6v6c0 4.4 3.4 8 8 9 4.6-1 8-4.6 8-9V6z"/><path d="M9 12h6"/>',
   };
   const svg = (k, cls = "ico") => {
     const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -63,6 +70,7 @@
     queue: ["Review queue", "Every watchlist hit with the system’s decision and the records behind it"],
     screen: ["Screen a person", "Check one name against every watchlist entry before or after onboarding"],
     notes: ["Analyst notes", "Information you’ve added to cases, kept in this browser"],
+    map: ["Link map", "How one alert’s records connect, from the screened customer to the decision"],
   };
 
 
@@ -552,6 +560,7 @@
       ]],
       ["Tools", [
         ["VIEW:screen", "Screen a person", "scan", null],
+        ["VIEW:map", "Link map", "map", null],
         ["VIEW:notes", "Analyst notes", "note", noteCount()],
       ]],
     ];
@@ -974,7 +983,8 @@
         meta("Hit", hit.hit_id, true),
         meta("Alert", hit.alert_id, true),
         meta("Screened", fmtLong(alert.screened_at)),
-        meta("Match score", hit.match_score != null ? String(hit.match_score) : null, true)
+        meta("Match score", hit.match_score != null ? String(hit.match_score) : null, true),
+        el("button", { type: "button", class: "map-open", onclick: () => { state.mapHit = hit.hit_id; state.mapPos = null; state.view = "map"; render(); } }, svg("map"), "Link map")
       ),
       el("h2", { class: "case-title" }, hit.name || "Unnamed list entry"),
       el("div", { class: "case-sub" },
@@ -1220,6 +1230,310 @@
     $("stage").replaceChildren(wrap);
   }
 
+
+  // ---------- Tools: link map ----------
+  function buildGraph(bundle, hitId) {
+    const hit = bundle.hits[hitId]; if (!hit) return null;
+    const alert = bundle.alerts[hit.alert_id] || {};
+    const cse = bundle.cases[hit.alert_id] || {};
+    const preds = predictions(bundle);
+    const hitIds = asList(alert.hit_ids).length ? asList(alert.hit_ids) : [hitId];
+    const cited = new Set(hitIds.flatMap((h) => asList(preds[h] && preds[h].evidence)));
+    const resolved = new Set(hitIds.map((h) => preds[h] && preds[h].customer_record_id).filter((x) => x && bundle.customers[x]));
+    const nodes = new Map(), edges = [];
+    const add = (id, col, kind, icon, title, sub, extra = {}) => { if (!nodes.has(id)) nodes.set(id, { id, col, kind, icon, title, sub, ...extra }); return id; };
+    const link = (a, b, label, strong) => { if (nodes.has(a) && nodes.has(b) && !edges.some((e) => e.a === a && e.b === b)) edges.push({ a, b, label, strong: !!strong }); };
+
+    const A = add("alert:" + hit.alert_id, 0, "Alert", "alert", alert.customer_name || "Screened customer", hit.alert_id, { rec: hit.alert_id, meta: [alert.dob && "born " + alert.dob, alert.country].filter(Boolean).join(", ") });
+
+    // how the alert reaches the bank's records
+    const accIds = [...new Set([alert.account_ref, ...asList(cse.account_ids)].filter(Boolean))];
+    const linkNodes = [];
+    for (const acc of accIds) linkNodes.push(add(acc, 1, "Account", "link", bundle.accounts[acc] && bundle.accounts[acc].login_handle ? bundle.accounts[acc].login_handle : "Account", acc, { rec: acc }));
+    if (alert.login_handle && !accIds.length) linkNodes.push(add("login:" + alert.login_handle, 1, "Login", "link", alert.login_handle, "login handle"));
+    if (alert.email) linkNodes.push(add("email:" + alert.email, 1, "Email", "link", alert.email, "email on file"));
+    if (!linkNodes.length) linkNodes.push(add("search:" + hit.alert_id, 1, "Name search", "scan", "No link on the alert", "matched by name, birth date, country"));
+    linkNodes.forEach((n) => link(A, n, null, true));
+
+    // customers
+    const custIds = [...new Set([...asList(cse.candidate_customer_ids), ...resolved, ...[...cited].filter((x) => String(x).startsWith("CUS-"))])].filter((c) => bundle.customers[c]);
+    const groups = asList(cse.person_groups);
+    for (const cid of custIds) {
+      const c = bundle.customers[cid];
+      add(cid, 2, "Customer", "person", c.full_name || cid, cid, { rec: cid, resolved: resolved.has(cid), meta: [c.dob && "born " + c.dob, c.nationality || c.residence_country].filter(Boolean).join(", ") });
+      let linked = false;
+      for (const ln of linkNodes) {
+        const lnode = nodes.get(ln);
+        if (lnode.kind === "Account") {
+          const accRec = bundle.accounts[lnode.rec];
+          const joint = (bundle.onboarding || []).some((o) => o.account_id === lnode.rec && o.customer_id === cid);
+          if ((accRec && accRec.customer_id === cid) || joint) { link(ln, cid, joint && accRec && accRec.customer_id !== cid ? "joint holder" : null, resolved.has(cid)); linked = true; }
+        } else if (lnode.kind === "Email" && fold(c.email) === fold(alert.email)) { link(ln, cid, null, resolved.has(cid)); linked = true; }
+        else if (lnode.kind === "Name search" || lnode.kind === "Login") { link(ln, cid, null, resolved.has(cid)); linked = true; }
+      }
+      if (!linked) link(linkNodes[0], cid, "same person", resolved.has(cid));
+    }
+    // same-person groups (records merged into one person)
+    for (const g of groups) for (let i = 1; i < g.length; i++) if (nodes.has(g[0]) && nodes.has(g[i])) link(g[0], g[i], "same person", resolved.has(g[0]) || resolved.has(g[i]));
+
+    // evidence: KYC, notes, web results
+    const kycIds = [...new Set([...asList(cse.kyc_ids), ...[...cited].filter((x) => String(x).startsWith("KYC-"))])].filter((k) => bundle.kyc_checks[k]);
+    for (const k of kycIds) {
+      const r = bundle.kyc_checks[k];
+      add(k, 3, "KYC check", "idcard", r.verified_name || "Identity check", k, { rec: k, cited: cited.has(k), meta: [r.result, r.document_country].filter(Boolean).join(", ") });
+      const owners = (bundle.onboarding || []).filter((o) => o.kyc_applicant_id === r.applicant_id).map((o) => o.customer_id);
+      const own = owners.find((o) => nodes.has(o));
+      if (own) link(own, k, null, cited.has(k));
+    }
+    const noteIds = [...new Set([...asList(cse.note_ids), ...[...cited].filter((x) => String(x).startsWith("NOTE-"))])].filter((n) => bundle.notes[n]);
+    for (const n of noteIds) {
+      const r = bundle.notes[n];
+      add(n, 3, "Note", "note", (r.text || "").slice(0, 48) + ((r.text || "").length > 48 ? "…" : ""), n, { rec: n, cited: cited.has(n), meta: [r.channel, r.created_at].filter(Boolean).join(", ") });
+      const own = custIds.find((cid) => fold(bundle.customers[cid].email) === fold(r.requester_email));
+      if (own) link(own, n, null, cited.has(n));
+    }
+    // watchlist hits + decisions
+    for (const h of hitIds) {
+      const H = bundle.hits[h]; if (!H) continue;
+      add("hit:" + h, 4, "Watchlist hit", "list", H.name || h, h, { rec: h, focus: h === hitId, meta: categoryOf(H) });
+      const p = preds[h];
+      const dec = p && p.decision ? p.decision : "PENDING";
+      add("dec:" + h, 5, "Decision", "map", DECISION_LABEL[dec] || "Pending", p && p.reason_code ? p.reason_code : "no decision", { decision: dec, focus: h === hitId, hit: h });
+      link("hit:" + h, "dec:" + h, null, true);
+      if (p && p.customer_record_id && nodes.has(p.customer_record_id)) link(p.customer_record_id, "dec:" + h, "resolved", true);
+    }
+    const srIds = [...new Set([...asList(cse.search_ids), ...[...cited].filter((x) => String(x).startsWith("SR-"))])].filter((s) => bundle.search_results[s]);
+    for (const s of srIds) {
+      const r = bundle.search_results[s];
+      add(s, 3, "Web result", "globe", r.title || s, s, { rec: s, cited: cited.has(s), meta: r.source });
+      link(s, "hit:" + hitId, cited.has(s) ? "about this hit" : null, cited.has(s));
+    }
+    // hits with no other way in hang off the alert
+    for (const h of hitIds) if (nodes.has("hit:" + h) && !edges.some((e) => e.b === "hit:" + h)) link(A, "hit:" + h, "screened against", false);
+    // cited evidence feeds the decision
+    for (const id of cited) if (nodes.has(id) && nodes.get(id).col === 3) {
+      const owner = hitIds.find((h) => asList(preds[h] && preds[h].evidence).includes(id));
+      link(id, "dec:" + owner, "cited", true);
+    }
+    // cap busy columns
+    const CAP = 9;
+    const byCol = {};
+    for (const n of nodes.values()) (byCol[n.col] = byCol[n.col] || []).push(n);
+    for (const [col, list] of Object.entries(byCol)) {
+      list.sort((a, b) => (b.cited || b.resolved || b.focus ? 1 : 0) - (a.cited || a.resolved || a.focus ? 1 : 0));
+      if (list.length > CAP) {
+        const drop = list.slice(CAP - 1);
+        for (const d of drop) nodes.delete(d.id);
+        const more = "more:" + col;
+        nodes.set(more, { id: more, col: +col, kind: "More", icon: "all", title: `${drop.length} more`, sub: "not shown to keep the map readable" });
+      }
+    }
+    const kept = edges.filter((e) => nodes.has(e.a) && nodes.has(e.b));
+    return { nodes: [...nodes.values()], edges: kept, hit, alert };
+  }
+
+  const NODE_W = 196, NODE_H = 64, LEVEL_GAP = 64, SIB_GAP = 20;
+  function layoutGraph(g) {
+    // top-down tree: one level per record type, children centred under their parents
+    const levels = {};
+    for (const n of g.nodes) (levels[n.col] = levels[n.col] || []).push(n);
+    const order = Object.keys(levels).map(Number).sort((a, b) => a - b);
+    const parentsOf = (id) => g.edges.filter((e) => e.b === id).map((e) => e.a);
+    const widest = Math.max(...order.map((l) => levels[l].length));
+    const fullW = widest * (NODE_W + SIB_GAP);
+    const pos = {};
+    order.forEach((lvl, li) => {
+      const list = levels[lvl];
+      // keep children near their parents: sort by mean parent x
+      list.sort((a, b) => {
+        const mx = (n) => { const ps = parentsOf(n.id).filter((p) => pos[p]); return ps.length ? ps.reduce((s, p) => s + pos[p].x, 0) / ps.length : fullW / 2; };
+        return mx(a) - mx(b);
+      });
+      const w = list.length * (NODE_W + SIB_GAP) - SIB_GAP;
+      list.forEach((n, i) => { pos[n.id] = { x: 48 + (fullW - w) / 2 + i * (NODE_W + SIB_GAP), y: 40 + li * (NODE_H + LEVEL_GAP) }; });
+    });
+    return pos;
+  }
+
+  function renderMap(bundle) {
+    if (!state.mapHit || !bundle.hits[state.mapHit]) state.mapHit = state.selectedId || Object.keys(bundle.hits)[0];
+    const g = buildGraph(bundle, state.mapHit);
+    const stage = $("stage");
+    if (!g) { stage.replaceChildren(el("div", { class: "tool" }, el("div", { class: "tool-empty" }, "Pick a hit in the queue first."))); return; }
+    if (!state.mapPos || state.mapPos._hit !== state.mapHit) { state.mapPos = layoutGraph(g); state.mapPos._hit = state.mapHit; state.mapView = null; }
+    const pos = state.mapPos;
+    const view = state.mapView || (state.mapView = { x: 0, y: 0, k: 1 });
+    const preds = predictions(bundle);
+    const p = preds[state.mapHit];
+    const dec = p && p.decision ? p.decision : "PENDING";
+
+    const layer = el("div", { class: "map-layer" });
+    const svgNS = "http://www.w3.org/2000/svg";
+    const edgeSvg = document.createElementNS(svgNS, "svg");
+    edgeSvg.setAttribute("class", "map-edges");
+    const defs = document.createElementNS(svgNS, "defs");
+    defs.innerHTML = '<marker id="mArrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 7 4 1 7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></marker>';
+    edgeSvg.appendChild(defs);
+    layer.appendChild(edgeSvg);
+    const edgeEls = g.edges.map((e) => {
+      const path = document.createElementNS(svgNS, "path");
+      path.setAttribute("class", "map-edge" + (e.strong ? " strong" : ""));
+      path.setAttribute("marker-end", "url(#mArrow)");
+      edgeSvg.appendChild(path);
+      let lab = null;
+      if (e.label) { lab = el("span", { class: "edge-label" + (e.strong ? " strong" : "") }, e.label); layer.appendChild(lab); }
+      return { e, path, lab };
+    });
+    const nodeEls = {};
+    for (const n of g.nodes) {
+      const cls = ["map-node", "k-" + n.kind.toLowerCase().replace(/\s+/g, "-")];
+      if (n.cited) cls.push("cited"); if (n.resolved) cls.push("resolved"); if (n.focus) cls.push("focus");
+      if (n.decision) cls.push("dec-" + (DECISION_CLASS[n.decision] || "pending"));
+      const node = el("div", { class: cls.join(" "), tabindex: "0", role: "button", "aria-label": `${n.kind}: ${n.title}` },
+        el("span", { class: "mn-icon" }, svg(n.icon)),
+        el("div", { class: "mn-body" },
+          el("div", { class: "mn-kind" }, n.kind, n.cited ? el("span", { class: "mn-tag" }, "Cited") : null, n.resolved ? el("span", { class: "mn-tag" }, "Resolved") : null),
+          el("div", { class: "mn-title" }, n.title),
+          el("div", { class: "mn-sub mono" }, n.sub))
+      );
+      node.style.transform = `translate(${pos[n.id].x}px, ${pos[n.id].y}px)`;
+      nodeEls[n.id] = node; layer.appendChild(node);
+    }
+    function drawEdges() {
+      let maxX = 0, maxY = 0;
+      for (const id in nodeEls) { maxX = Math.max(maxX, pos[id].x + NODE_W); maxY = Math.max(maxY, pos[id].y + NODE_H); }
+      edgeSvg.setAttribute("width", maxX + 200); edgeSvg.setAttribute("height", maxY + 200);
+      for (const { e, path, lab } of edgeEls) {
+        const a = pos[e.a], b = pos[e.b];
+        let x1, y1, x2, y2, d, lx, ly;
+        if (Math.abs(a.y - b.y) < 8) { // same level: arc underneath
+          const left = a.x < b.x ? a : b, right = a.x < b.x ? b : a;
+          x1 = a.x + NODE_W / 2; y1 = a.y + NODE_H; x2 = b.x + NODE_W / 2; y2 = b.y + NODE_H + 4;
+          const dip = 28 + Math.min(40, Math.abs(x2 - x1) * 0.08);
+          d = `M${x1},${y1} C${x1},${y1 + dip} ${x2},${y2 + dip} ${x2},${y2}`;
+          lx = (left.x + right.x + NODE_W) / 2; ly = y1 + dip * 0.75;
+        } else {
+          const down = b.y > a.y;
+          x1 = a.x + NODE_W / 2; y1 = down ? a.y + NODE_H : a.y; x2 = b.x + NODE_W / 2; y2 = down ? b.y - 4 : b.y + NODE_H + 4;
+          const dy = Math.max(28, Math.abs(y2 - y1) * 0.5) * (down ? 1 : -1);
+          d = `M${x1},${y1} C${x1},${y1 + dy} ${x2},${y2 - dy} ${x2},${y2}`;
+          lx = (x1 + x2) / 2; ly = (y1 + y2) / 2;
+        }
+        path.setAttribute("d", d);
+        if (lab) lab.style.transform = `translate(${lx - lab.offsetWidth / 2}px, ${ly - 9}px)`;
+      }
+    }
+    const canvas = el("div", { class: "map-canvas", tabindex: "-1" }, layer);
+    const applyView = () => { layer.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`; canvas.style.backgroundPosition = `${view.x}px ${view.y}px`; canvas.style.backgroundSize = `${20 * view.k}px ${20 * view.k}px`; zoomLabel.textContent = Math.round(view.k * 100) + "%"; };
+
+    // details panel
+    const panel = el("aside", { class: "map-panel" });
+    function showDetail(n) {
+      for (const id in nodeEls) nodeEls[id].classList.toggle("selected", id === n.id);
+      const kids = [el("div", { class: "mp-kind" }, n.kind), el("div", { class: "mp-title" }, n.title)];
+      if (n.meta) kids.push(el("div", { class: "mp-meta" }, n.meta));
+      if (n.decision) {
+        const pr = preds[n.hit];
+        kids.push(el("span", { class: "dec " + (DECISION_CLASS[n.decision] || "pending") }, DECISION_LABEL[n.decision] || "Pending"));
+        if (pr && pr.reason) kids.push(el("p", { class: "mp-reason" }, pr.reason));
+        kids.push(el("button", { type: "button", class: "btn sm-fixed", onclick: () => openCase(n.hit) }, "Open case"));
+      } else if (n.rec && findRecord(n.rec, bundle)) {
+        kids.push(evidenceCard(n.rec, bundle, !!n.cited));
+        if (n.kind === "Watchlist hit") kids.push(el("button", { type: "button", class: "btn sm-fixed", onclick: () => openCase(n.rec) }, "Open case"));
+      } else if (n.sub) kids.push(el("div", { class: "mp-meta" }, n.sub));
+      const linkedTo = g.edges.filter((e) => e.a === n.id || e.b === n.id).map((e) => g.nodes.find((x) => x.id === (e.a === n.id ? e.b : e.a))).filter(Boolean);
+      if (linkedTo.length) kids.push(el("div", { class: "mp-links" }, el("div", { class: "mp-kind" }, `Linked to ${linkedTo.length}`),
+        ...linkedTo.map((x) => el("button", { type: "button", class: "mp-link", onclick: () => showDetail(x) }, el("span", null, x.kind), el("span", { class: "mono" }, x.sub)))));
+      panel.replaceChildren(...kids);
+      for (const { e, path } of edgeEls) path.classList.toggle("hot", e.a === n.id || e.b === n.id);
+    }
+
+    // drag nodes, pan canvas
+    let drag = null;
+    canvas.addEventListener("pointerdown", (ev) => {
+      if (ev.button !== 0) return;
+      const nodeEl = ev.target.closest(".map-node");
+      const id = nodeEl ? Object.keys(nodeEls).find((k) => nodeEls[k] === nodeEl) : null;
+      drag = { id, sx: ev.clientX, sy: ev.clientY, ox: id ? pos[id].x : view.x, oy: id ? pos[id].y : view.y, moved: false };
+      canvas.setPointerCapture(ev.pointerId);
+      canvas.classList.add(id ? "dragging-node" : "panning");
+      if (nodeEl) nodeEl.classList.add("lift");
+    });
+    canvas.addEventListener("pointermove", (ev) => {
+      if (!drag) return;
+      const dx = ev.clientX - drag.sx, dy = ev.clientY - drag.sy;
+      if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+      if (drag.id) {
+        pos[drag.id].x = drag.ox + dx / view.k; pos[drag.id].y = drag.oy + dy / view.k;
+        nodeEls[drag.id].style.transform = `translate(${pos[drag.id].x}px, ${pos[drag.id].y}px)`;
+        drawEdges();
+      } else { view.x = drag.ox + dx; view.y = drag.oy + dy; applyView(); }
+    });
+    const end = () => {
+      if (!drag) return;
+      if (drag.id) { nodeEls[drag.id].classList.remove("lift"); if (!drag.moved) showDetail(g.nodes.find((n) => n.id === drag.id)); }
+      canvas.classList.remove("dragging-node", "panning");
+      drag = null;
+    };
+    canvas.addEventListener("pointerup", end);
+    canvas.addEventListener("pointercancel", end);
+    canvas.addEventListener("keydown", (ev) => {
+      const nodeEl = ev.target.closest && ev.target.closest(".map-node");
+      if (nodeEl && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); showDetail(g.nodes.find((n) => nodeEls[n.id] === nodeEl)); }
+    });
+    const zoomTo = (k, cx, cy) => {
+      const r = canvas.getBoundingClientRect();
+      cx = cx == null ? r.width / 2 : cx; cy = cy == null ? r.height / 2 : cy;
+      const nk = Math.min(1.8, Math.max(0.35, k));
+      view.x = cx - ((cx - view.x) * nk) / view.k; view.y = cy - ((cy - view.y) * nk) / view.k; view.k = nk; applyView();
+    };
+    canvas.addEventListener("wheel", (ev) => {
+      ev.preventDefault();
+      if (ev.ctrlKey || ev.metaKey) { const r = canvas.getBoundingClientRect(); zoomTo(view.k * (ev.deltaY < 0 ? 1.1 : 0.9), ev.clientX - r.left, ev.clientY - r.top); }
+      else { view.x -= ev.deltaX; view.y -= ev.deltaY; applyView(); }
+    }, { passive: false });
+    const fit = () => {
+      const r = canvas.getBoundingClientRect();
+      let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
+      for (const id in nodeEls) { minX = Math.min(minX, pos[id].x); minY = Math.min(minY, pos[id].y); maxX = Math.max(maxX, pos[id].x + NODE_W); maxY = Math.max(maxY, pos[id].y + NODE_H); }
+      const k = Math.min(1, Math.max(0.7, Math.min((r.width - 48) / (maxX - minX + 48), (r.height - 130) / (maxY - minY + 40))));
+      const w = (maxX - minX) * k, h = (maxY - minY) * k;
+      view.k = k;
+      view.x = w + 48 <= r.width ? (r.width - w) / 2 - minX * k : 24 - minX * k;
+      view.y = h + 130 <= r.height ? 44 + (r.height - 130 - h) / 2 - minY * k : 44 - minY * k;
+      applyView();
+    };
+    const zoomLabel = el("span", { class: "zoom-label mono" }, "100%");
+    const hitsInAlert = asList(g.alert.hit_ids);
+    const toolbar = el("div", { class: "map-toolbar" },
+      el("button", { type: "button", class: "tb-btn", title: "Zoom out", "aria-label": "Zoom out", onclick: () => zoomTo(view.k / 1.2) }, "−"),
+      zoomLabel,
+      el("button", { type: "button", class: "tb-btn", title: "Zoom in", "aria-label": "Zoom in", onclick: () => zoomTo(view.k * 1.2) }, "+"),
+      el("span", { class: "tb-sep" }),
+      el("button", { type: "button", class: "tb-btn wide", onclick: fit }, "Fit"),
+      el("button", { type: "button", class: "tb-btn wide", onclick: () => { state.mapPos = null; renderMap(bundle); } }, "Reset layout")
+    );
+    const legend = el("div", { class: "map-legend" },
+      el("span", null, el("i", { class: "lg-line strong" }), "Path the decision used"),
+      el("span", null, el("i", { class: "lg-line" }), "Other link"),
+      el("span", null, "Drag nodes to rearrange, drag the background to pan, ⌘ scroll to zoom"));
+
+    const head = el("div", { class: "map-head" },
+      el("div", null,
+        el("div", { class: "case-meta" },
+          el("span", { class: "meta" }, el("span", { class: "meta-k" }, "Alert"), el("span", { class: "mono" }, g.hit.alert_id)),
+          el("span", { class: "meta" }, el("span", { class: "meta-k" }, "Screened customer"), el("span", null, g.alert.customer_name || "unknown")),
+          hitsInAlert.length > 1 ? el("span", { class: "meta" }, el("span", { class: "meta-k" }, "Hits on this alert"), el("span", { class: "mono" }, String(hitsInAlert.length))) : null),
+        el("h2", { class: "map-title" }, g.hit.name || state.mapHit, el("span", { class: "dec " + (DECISION_CLASS[dec] || "pending") }, DECISION_LABEL[dec] || "Pending"))),
+      el("div", { class: "map-actions" },
+        el("button", { type: "button", class: "btn", onclick: () => openCase(state.mapHit) }, "Open case")));
+    const wrap = el("div", { class: "map-wrap" }, head, el("div", { class: "map-body" }, el("div", { class: "map-stage" }, canvas, toolbar, legend), panel));
+    stage.replaceChildren(wrap);
+    drawEdges();
+    requestAnimationFrame(() => { drawEdges(); if (!state.mapViewSet) fit(); state.mapViewSet = false; applyView(); });
+    showDetail(g.nodes.find((n) => n.focus && n.decision) || g.nodes[0]);
+  }
+
   // ---------- Tools: screen a person ----------
   const LISTING_PHRASE = { sanctions: "a sanctioned individual", pep: "a politically exposed person", enforcement: "the subject of enforcement action", "adverse media": "named in adverse media", soe: "a state-owned enterprise official" };
   function hitBirthYears(bundle, hit, lookup, notCountries) {
@@ -1356,8 +1670,10 @@
     $("page-title").textContent = title;
     $("page-sub").textContent = sub;
     document.body.classList.toggle("tool-view", state.view !== "queue");
+    document.body.classList.toggle("map-mode", state.view === "map");
     if (state.view === "screen") { renderScreen(bundle); return; }
     if (state.view === "notes") { renderNotes(bundle); return; }
+    if (state.view === "map") { renderMap(bundle); return; }
     const rows = buildQueue(bundle);
     if (state.selectedId && !rows.some((r) => r.hit.hit_id === state.selectedId)) {
       // keep selection even if filtered out? Better to show it anyway in the stage, queue just won't highlight.
