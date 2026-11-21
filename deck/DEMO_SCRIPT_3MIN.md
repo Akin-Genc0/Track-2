@@ -43,6 +43,10 @@ python3 ui/serve.py                          # http://127.0.0.1:8765/
 
 **"Mohammad Nadeem Ghani is on the US Treasury's sanctions list for drug trafficking and money laundering. This customer's date of birth, 17 February 1968, fits the list's February 1968. Both are linked to Pakistan and the UK, and the names agree. True match, and it cites NOTE-4E8A14 so an auditor can check it."**
 
+▶ In the reason text, click the **NOTE-4E8A14** chip: the page scrolls to that record's card under "Evidence records" and the card flashes. (Every record ID written in the reason is a clickable chip; `highlightReason` and `evidenceCard` in `ui/app.js`. The cited cards are marked and listed first.)
+
+**"Click the ID and you land on the record itself."**
+
 ▶ Tab 2: **H-C864DC**. Same list entry, same match score of 100.
 
 **"Same list entry, same 100 percent name score, different customer. This one's verified ID check, KYC-68E6D6, says born in 1993. Someone born in 1993 can't be a man born in February 1968, so we clear it, and we cite only that one record. The name score can't tell these two apart. The facts can."**
@@ -73,7 +77,7 @@ python3 ui/serve.py                          # http://127.0.0.1:8765/
 python3 ~/Track-2-data/screening/validate.py --data ~/Track-2-data/screening/dev --output output/dev.jsonl --score ~/Track-2-data/screening/dev/practice_labels.jsonl
 ```
 
-**"This is the organisers' own scorer: 819 lines, zero problems, 50 out of 50 practice decisions correct and zero unsafe clearances. The reason code and customer record are right on every one. We also tried to break it. We reworded our own data 16 different ways, and not one decision moved toward clearing. On 559 synthetic hits with brand-new customers we never saw, we got 97.9 percent right with zero unsafe clears."**
+**"This is the organisers' own scorer: 819 lines, zero problems, 50 out of 50 practice decisions correct and zero unsafe clearances. The reason code and customer record are right on every one. That's 589 of 819 hits, 72 percent, off the analyst's queue, a practice cost of 0 against 108 for reviewing everything, and 0 unsafe clears. We also tried to break it. We reworded our own data 16 different ways, and not one decision moved toward clearing. On 559 synthetic hits with brand-new customers we never saw, we got 97.9 percent right with zero unsafe clears."**
 
 ## 6. Why we win (2:45–3:00)
 
@@ -89,11 +93,11 @@ python3 ~/Track-2-data/screening/validate.py --data ~/Track-2-data/screening/dev
 |---|---|---|
 | Hook | 0:00–0:20 | 75 |
 | What we built | 0:20–0:40 | 60 |
-| Ghani pair | 0:40–1:10 | 115 |
+| Ghani pair | 0:40–1:10 | 125 |
 | Abdul Rahman | 1:10–1:30 | 65 |
 | James Gus Oliver | 1:30–1:55 | 75 |
 | Safety | 1:55–2:20 | 75 |
-| Results | 2:20–2:45 | 80 |
+| Results | 2:20–2:45 | 105 |
 | Close | 2:45–3:00 | 50 |
 
 If you're running long, cut the Abdul Rahman segment (1:10–1:30). Never cut H-009799: it's the safety story.
@@ -116,4 +120,4 @@ If you're running long, cut the Abdul Rahman segment (1:10–1:30). Never cut H-
 | H-13E1CF | DIFFERENT / TEMPORAL_IMPOSSIBILITY, CUS-364225, practice-labelled and correct | `grep H-13E1CF output/dev.jsonl` |
 | H-009799 | REVIEW / AMBIGUOUS_CUSTOMER_RECORD (CUS-018587 REVIEW, CUS-489904 DIFFERENT); fixed in 60f640f | `grep H-009799 output/dev.jsonl`; `audit/CROSSCHECK_JOHN.md` |
 
-**Stale numbers in `deck/index.html` and `deck/PITCH.md`** (the lead owns the deck, so fix them there): "~6 s" is now about 16 s; "465 / 229" is now 464 / 230; "56.8%" is now 56.7%; "23 policy tests" is now 24; "17 rewordings" is 16 single rewordings plus 2 combined runs. Every other number on the results and robustness slides still holds.
+**Deck numbers checked against main's `output/dev.jsonl`:** 464 / 125 / 230; 217 clears coded on location and 125 on a verified name; 27 policy tests (73 automated checks); 16 single rewordings plus 2 combined runs; about 16 s per run. The older figures ("~6 s", "465 / 229", "56.8%", "23" or "24 policy tests", "17 rewordings", "216 / 126") are all corrected in `deck/index.html` and `deck/PITCH.md`.
