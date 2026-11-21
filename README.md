@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | **True match.** H-582410: name, DOB and Spain agree; every fact cites its record (NOTE-14E25A, CUS-377745). | **Cleared.** H-13E1CF: the customer was born in 2007, so was at most 12 at the hit’s 2020 report. | **Review.** H-0F3C96: three customers fit the alert and lead to different decisions, so a person decides. |
 
-*Screenshots of the analyst desk (`ui/`), captured on an earlier run whose header shows 465 / 125 / 229; the current run gives 464 / 125 / 230 and the same decisions for these three hits.*
+*Screenshots of the analyst desk (`ui/`) on the current run: 819 hits, 464 cleared, 125 confirmed, 230 for review.*
 
 ## Judges start here
 
