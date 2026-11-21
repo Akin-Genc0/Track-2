@@ -1888,7 +1888,11 @@
   async function loadBundle() {
     $("boot-msg").textContent = "Loading case files…";
     let res = null;
-    try { res = await fetch("data/bundle.json", { cache: "no-store" }); } catch (_) { res = null; }
+    // The hosted site (Vercel) never ships a bundle (participant data stays off the web), so don't ask for one.
+    const staticSite = /\.(vercel\.app|github\.io)$/i.test(location.hostname) || new URLSearchParams(location.search).has("static");
+    if (!staticSite) {
+      try { res = await fetch("data/bundle.json", { cache: "no-store" }); } catch (_) { res = null; }
+    }
     if (res && res.ok) {
       state.bundle = await res.json();
       state.dataSource = "server";
@@ -1915,6 +1919,7 @@
   }
 
   async function pollMeta() {
+    if (state.dataSource === "browser") return; // hosted site: nothing on the server to watch
     try {
       const res = await fetch("data/meta.json", { cache: "no-store" });
       if (!res.ok) return;

@@ -137,13 +137,136 @@
   };
   const TABLES = ["alerts", "hits", "customers", "accounts", "onboarding", "kyc_checks", "notes", "search_results", "practice_labels"];
 
+  // ---------------------------------------------------------------- data room normaliser
+  // Port of system/data.py (normalize, as_text, as_list, flatten_details, load_name_variants)
+  // plus the clean-up prepare.py does after it, so official-format files (wrapped alert
+  // fields, dict `details`, list `path`, other field names) build the same bundle as Python.
+  const blank = (v) => v == null || v === "" || (Array.isArray(v) && !v.length);
+  const isObj = (v) => v != null && typeof v === "object" && !Array.isArray(v);
+  function decodeValue(v) {
+    if (typeof v === "string" && /^\s*[[{]/.test(v)) { try { return JSON.parse(v); } catch (e) { /* keep text */ } }
+    return v;
+  }
+  function asText(v) {
+    v = decodeValue(v);
+    if (v == null) return "";
+    if (Array.isArray(v)) return v.map(asText).filter(Boolean).join("; ");
+    if (isObj(v)) return Object.values(v).map(asText).filter(Boolean).join(", ");
+    if (v === true) return "True";
+    if (v === false) return "False";
+    return String(v).trim();
+  }
+  function asList(v) {
+    v = decodeValue(v);
+    if (v == null) return [];
+    if (Array.isArray(v)) {
+      const out = [];
+      for (const x of v) {
+        if (Array.isArray(x)) out.push(...asList(x));
+        else { const t = asText(x); if (t) out.push(t); }
+      }
+      return out;
+    }
+    if (isObj(v)) { const t = asText(v); return t ? [t] : []; }
+    const s = asText(v);
+    return s ? s.split(";").map((p) => p.trim()).filter(Boolean) : [];
+  }
+  function flattenDetails(v) {
+    v = decodeValue(v);
+    if (blank(v)) return v;
+    if (isObj(v)) return Object.entries(v).map(([k, x]) => { const t = asText(x); return t ? (asText(k) ? `${k}: ${t}` : t) : ""; }).filter(Boolean).join("; ");
+    return asText(v);
+  }
+  const IDS = { hits: "hit_id", alerts: "alert_id", customers: "record_id", accounts: "account_id", kyc_checks: "check_id", notes: "note_id", search_results: "result_id" };
+  const ALIASES = {
+    hits: { hit_id: ["id"], name: ["full_name", "names"], aliases: ["alternate_names"], dobs: ["dob", "date_of_birth", "dates_of_birth"], countries: ["country"], profile_notes: ["biography", "description"] },
+    customers: { record_id: ["id", "customer_id"], full_name: ["name", "names"], dob: ["date_of_birth", "dobs"], residence_country: ["country", "countries"] },
+    alerts: { alert_id: ["id"], customer_name: ["name", "full_name"], dob: ["date_of_birth"], hit_ids: ["hits"] },
+  };
+  function normalizeRow(raw, kind) {
+    let row = {};
+    for (const [k, v] of Object.entries(raw)) row[k] = decodeValue(v);
+    const wrappers = [kind.replace(/s+$/, ""), "record", "data", "profile"].concat(kind === "alerts" ? ["customer", "screened", "screened_customer"] : []);
+    for (const w of wrappers) {
+      const nested = row[w];
+      if (isObj(nested)) { const rest = { ...row }; delete rest[w]; row = { ...nested, ...rest }; }
+    }
+    const aliases = { ...(ALIASES[kind] || {}) };
+    if (IDS[kind] && !aliases[IDS[kind]]) aliases[IDS[kind]] = ["id"];
+    for (const [key, alts] of Object.entries(aliases)) {
+      if (blank(row[key])) for (const a of alts) if (!blank(row[a])) { row[key] = row[a]; break; }
+    }
+    for (const k of Object.keys(row)) if (k.endsWith("_id") || k === "id" || k === "account_ref") row[k] = asText(row[k]);
+    if (kind === "hits" && isObj(row.details)) row.details = flattenDetails(row.details);
+    return row;
+  }
+  const HIT_LISTS = LISTS.hits, LABEL_LISTS = LISTS.practice_labels;
+  function tidyRow(r, kind) {
+    if (kind === "hits") {
+      for (const k of HIT_LISTS) if (k in r) r[k] = asList(r[k]);
+      if (!blank(r.match_score)) { const n = Number(r.match_score); if (typeof r.match_score !== "boolean" && Number.isFinite(n)) r.match_score = n; }
+    } else if (kind === "alerts") {
+      r.hit_ids = asList(r.hit_ids);
+      for (const k of ["customer_name", "entity_type", "dob", "country", "city", "email", "login_handle"]) if (r[k] != null && typeof r[k] === "object") r[k] = asText(r[k]);
+    } else if (kind === "practice_labels") {
+      for (const k of LABEL_LISTS) r[k] = asList(r[k]);
+      if (r.path != null && typeof r.path === "object") r.path = Array.isArray(r.path) ? r.path.map(asText).join("  →  ") : asText(r.path);
+    }
+    return r;
+  }
+  const NAME_SKIP = ["login", "handle", "email", "user", "file", "list", "source", "entity"];
+  function findName(d, depth = 0) {
+    if (!isObj(d) || depth > 2) return "";
+    for (const k of ["customer_name", "screened_name", "name", "full_name", "customer_full_name"]) {
+      const v = d[k]; if (typeof v === "string" && v.trim()) return v.trim();
+    }
+    for (const [k, v] of Object.entries(d)) {
+      const lk = k.toLowerCase();
+      if (typeof v === "string" && v.trim() && lk.includes("name") && !NAME_SKIP.some((x) => lk.includes(x))) return v.trim();
+    }
+    for (const v of Object.values(d)) { const got = findName(v, depth + 1); if (got) return got; }
+    return "";
+  }
+  function loadNameVariants(nv) {
+    const groups = [], forms = [];
+    const formy = (k) => /legal|form|compan/.test(k.toLowerCase());
+    const walk = (x, key = "") => {
+      if (isObj(x)) { for (const [k, v] of Object.entries(x)) walk(v, k); }
+      else if (Array.isArray(x)) {
+        if (x.every((e) => typeof e === "string")) { if (formy(key)) forms.push(...x); else groups.push([...x]); }
+        else for (const e of x) walk(e, key);
+      } else if (typeof x === "string" && /legal|form/.test(key.toLowerCase())) forms.push(...x.split(",").map((p) => p.trim()).filter(Boolean));
+    };
+    if (nv != null) {
+      if (isObj(nv)) {
+        for (const [k, v] of Object.entries(nv)) {
+          if (Array.isArray(v) && v.every((e) => typeof e === "string") && !/legal|form|compan|given|group|name/.test(k.toLowerCase())) groups.push([k, ...v]);
+          else walk(v, k);
+        }
+      } else walk(nv);
+    }
+    if (!forms.length) forms.push(..."ab ag as asa bv co company corp corporation gmbh inc kg limited llc llp lp ltd na nv oy oyj plc sa sarl sas se sf sl spa srl".split(" "));
+    return { given_names: groups, company_legal_forms: forms };
+  }
+  function normalizeDev(dev) {
+    const out = {};
+    for (const t of TABLES) out[t] = (dev[t] || []).filter(isObj).map((r) => tidyRow(normalizeRow(r, t), t));
+    let missing = 0;
+    for (const a of out.alerts) {
+      if (!(typeof a.customer_name === "string" && a.customer_name.trim())) { a.customer_name = findName(a); if (!a.customer_name) missing++; }
+    }
+    if (missing) console.warn(`${missing} alert(s) have no customer name in the data room`);
+    out.name_variants = loadNameVariants(dev.name_variants);
+    return out;
+  }
+
   function toDevTables(tables, policy) {
     const dev = {};
     for (const name of TABLES) {
       if (!tables[name]) throw new Error(`The workbook has no “${name.replace(/_/g, " ")}” sheet. Is this the organisers' Screening Dev Set?`);
       dev[name] = tables[name].map((d) => {
         for (const k of LISTS[name] || []) {
-          const v = d[k];
+          const v = decodeValue(d[k]);
           d[k] = typeof v === "string" ? v.split("; ").map((x) => x.trim()).filter(Boolean) : (v == null ? [] : v);
         }
         if (name === "alerts" && d.hit_count != null) d.hit_count = Math.trunc(parseFloat(d.hit_count));
@@ -499,11 +622,12 @@
         const f = byName[t + ".jsonl"];
         if (!f) throw new Error(`Missing ${t}.jsonl. Drop the whole dev/ folder, or the organisers' .xlsx workbook.`);
         progress("Reading " + f.name);
-        dev[t] = (await f.text()).split(/\r?\n/).filter((l) => l.trim()).map((l) => JSON.parse(l));
+        dev[t] = (await f.text()).replace(/^\uFEFF/, "").split(/\r?\n/).filter((l) => l.trim()).map((l) => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(isObj);
       }
       const nv = byName["name_variants.json"];
-      dev.name_variants = nv ? JSON.parse(await nv.text()) : { given_names: [], company_legal_forms: [] };
+      try { dev.name_variants = nv ? JSON.parse((await nv.text()).replace(/^\uFEFF/, "")) : null; } catch (e) { dev.name_variants = null; }
     }
+    dev = normalizeDev(dev);
     progress("Loading decisions");
     const [countries, preds] = await Promise.all([fetchCountries(), fetchPredictions()]);
     const bundle = await buildBundle(dev, countries, preds, preds ? "data/dev.jsonl" : null, progress);
@@ -512,5 +636,5 @@
     return bundle;
   }
 
-  window.FathomLoader = { fromFiles, getCached, setCached, clearCached, buildBundle, readWorkbook, toDevTables };
+  window.FathomLoader = { fromFiles, getCached, setCached, clearCached, buildBundle, readWorkbook, toDevTables, normalizeDev };
 })();

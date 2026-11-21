@@ -5,13 +5,9 @@ name: Deploy Fathom to GitHub Pages
 # in their browser. Only the system's decisions (output/dev.jsonl, already in the repo)
 # are included so the desk shows real results.
 
+# Replaced by Vercel (see vercel.json). Kept for manual runs only, so pushes no longer
+# publish a second copy of the site.
 on:
-  push:
-    branches: [main, ui/fathom-redesign]
-    paths:
-      - "ui/**"
-      - "output/dev.jsonl"
-      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:

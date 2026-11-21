@@ -486,7 +486,7 @@ kbd {
 }
 
 /* ---------- link map ---------- */
-.map-open { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; margin-left: auto; background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--r-tag); font-size: 12px; color: var(--text); transition: background-color 150ms var(--ease); }
+.map-open { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; margin-left: auto; background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--r-tag); font-size: 12px; color: var(--text); transition: background-color 150ms var(--ease); }
 .map-open:hover { background: var(--raised); }
 .map-open .ico { width: 14px; height: 14px; }
 .map-mode .kpis { display: none; }
