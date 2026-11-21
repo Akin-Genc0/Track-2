@@ -28,7 +28,8 @@ ALIASES = {
 def normalize(row, kind):
     # Only unwrap known record envelopes; arbitrary nested IDs must not become identity links.
     row = {k: decode_value(v) for k, v in row.items()}
-    for wrapper in (kind.rstrip("s"), "record", "data", "profile"):
+    wrappers = (kind.rstrip("s"), "record", "data", "profile") + (("customer", "screened", "screened_customer") if kind == "alerts" else ())
+    for wrapper in wrappers:
         nested = row.get(wrapper)
         if isinstance(nested, dict):
             row = dict(nested, **{k: v for k, v in row.items() if k != wrapper})
