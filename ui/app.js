@@ -559,9 +559,8 @@
 
   function renderQueue(rows) {
     const f = state.filter;
-    const scope = f.decision === "ALL" ? "hits" : (DECISION_LABEL[f.decision] || "pending").toLowerCase();
     $("queue-meta").replaceChildren(
-      el("span", null, `${nf.format(rows.length)} ${f.decision === "ALL" ? "hits" : scope}`),
+      el("span", null, f.decision === "ALL" && !f.labeled && !f.disagree && !f.q ? `${nf.format(rows.length)} hits` : `${nf.format(rows.length)} of ${nf.format(Object.keys(state.bundle.hits).length)} hits`),
       el("span", { class: "qm-sort" }, "Disagreements first, then by score")
     );
     const box = $("queue");
@@ -1130,6 +1129,12 @@
     if (state.selectedId && !rows.some((r) => r.hit.hit_id === state.selectedId)) {
       // keep selection even if filtered out? Better to show it anyway in the stage, queue just won't highlight.
     }
+    const fkey = JSON.stringify([state.filter.decision, state.filter.labeled, state.filter.disagree, state.filter.category, state.filter.q]);
+    if (state._fkey !== undefined && state._fkey !== fkey && rows.length && !rows.some((r) => r.hit.hit_id === state.selectedId)) {
+      state.selectedId = rows[0].hit.hit_id;
+      state.selectedCustomer = null;
+    }
+    state._fkey = fkey;
     if (!state.selectedId && rows.length) state.selectedId = rows[0].hit.hit_id;
     renderQueue(rows);
     renderCase(bundle);
