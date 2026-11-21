@@ -4,21 +4,15 @@
 
 ## Quickstart
 
-Use Python 3.11 and run these commands from the repository root. **The dataset is for event participants only and must never be committed.** Obtain it through the event organisers. Place `Screening Dev Set - browse.xlsx` in the repository root (gitignored), or set `TRACK2_XLSX` to its path:
+Use Python 3.11 and run these commands from the repository root. **The dataset is for event participants only and must never be committed.** Obtain the official development folder from the event organisers and place it at `dev/` (already gitignored):
 
 ```sh
-export TRACK2_XLSX="/path/to/Screening Dev Set - browse.xlsx"
-```
-
-The converter searches `$TRACK2_XLSX`, then `./Screening Dev Set - browse.xlsx`, then `~/Track-2-data/Screening Dev Set - browse.xlsx`, choosing the first existing file. If none exists, it prints setup instructions and exits with status 1.
-
-With a local workbook:
-
-```sh
-python3 tools/xlsx_to_dev.py
-system/run data/dev output/dev.jsonl
-python3 tools/score.py output/dev.jsonl data/dev/practice_labels.jsonl -v
-python3 tests/test_policy.py
+system/run dev output/dev.jsonl
+python3 tools/score.py output/dev.jsonl dev/practice_labels.jsonl -v
+python3 tools/check_submission.py output/dev.jsonl dev
+# If you have the organisers' validate.py and output.schema.json:
+# python3 validate.py --data dev --output output/dev.jsonl --score dev/practice_labels.jsonl
+make test
 python3 ui/serve.py
 ```
 
@@ -28,18 +22,9 @@ Open http://127.0.0.1:8765/ for the analyst desk; stop the server with Ctrl-C. I
 open deck/index.html  # macOS; otherwise open this file in your browser
 ```
 
-The first command reconstructs `data/dev/` from your local participant workbook. Workbook flattening and truncation limits are described in the system README. Running the system regenerates the required `output/dev.jsonl` deliverable. `make data run score test` runs the same sequence; `make ui` starts the desk and `make deck` opens the pitch.
+`make run score test` runs the same sequence against `dev/`; `make ui` starts the desk and `make deck` opens the pitch. Running the system regenerates the required `output/dev.jsonl` deliverable. You can run `make test` without any dataset.
 
-If you already have a ready `dev/` folder, skip conversion and pass it directly:
-
-```sh
-system/run /path/to/dev output/dev.jsonl
-python3 tools/score.py output/dev.jsonl /path/to/dev/practice_labels.jsonl -v
-# Equivalent Make targets:
-make run score DATA_DIR=/path/to/dev
-```
-
-The UI expects inputs under `data/dev/` or `dev/` in the repository root; both are gitignored. You can run `make test` without any dataset.
+Workbook conversion is optional. If you only have `Screening Dev Set - browse.xlsx`, place it in the repository root (gitignored) or set `TRACK2_XLSX` to its path, then run `python3 tools/xlsx_to_dev.py` (writes `data/dev/`) and pass `DATA_DIR=data/dev` to Make. The converter searches `$TRACK2_XLSX`, then `./Screening Dev Set - browse.xlsx`, then `~/Track-2-data/Screening Dev Set - browse.xlsx`.
 
 ## Repository map
 
@@ -53,11 +38,12 @@ The UI expects inputs under `data/dev/` or `dev/` in the repository root; both a
 | [tests/](tests/) | Synthetic policy regression cases |
 | [tools/](tools/) | Workbook conversion, local scoring and perturbation checks |
 | [FORMAT.md](FORMAT.md) | Input/output format reference |
-| `data/dev/` | Generated local input files (ignored by Git) |
+| `dev/` | Official development inputs (ignored by Git; never commit) |
+| `data/dev/` | Optional workbook reconstruction (also ignored by Git) |
 
 ## Evaluation
 
-Run the synthetic policy tests independently of the dataset. The local scorer compares predictions with the workbook’s practice labels, reporting decision accuracy, unsafe clearances, cost relative to reviewing every hit, reason-code/customer agreement and evidence overlap. Practice-set results are development feedback, not proof of unseen-set performance or real-world safety. See [system/README.md](system/README.md) for detailed evaluation and limitations. Optional robustness checks: `python3 tools/perturb.py data/dev`.
+Run the synthetic policy tests independently of the dataset. The local scorer compares predictions with the official practice labels, reporting decision accuracy, unsafe clearances, cost relative to reviewing every hit, reason-code/customer agreement and evidence overlap. Practice-set results are development feedback, not proof of unseen-set performance or real-world safety. See [system/README.md](system/README.md) for detailed evaluation and limitations. Optional robustness checks: `python3 tools/perturb.py dev`.
 
 GitHub Actions runs only data-free policy tests and Python syntax checks on Python 3.11. It never needs the workbook or participant data. Participants can run the full pipeline locally using the quickstart above.
 

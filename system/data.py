@@ -45,6 +45,8 @@ def normalize(row, kind):
     for key in list(row):
         if key.endswith("_id") or key in ("id", "account_ref"):
             row[key] = as_text(row[key])
+    if kind == "hits" and isinstance(row.get("details"), dict):
+        row["details"] = flatten_details(row["details"])
     return row
 
 
@@ -112,6 +114,24 @@ def as_dict_list(v):
     return as_list(v)
 
 
+def flatten_details(value):
+    """Official hits carry `details` as a dict (e.g. {"pep": "Minister | Spain | (2011–2018)"}).
+    The workbook form is already a string. Flatten to text for a stable field type, but never
+    merge this into profile_notes: PEP/enforcement tenure dates and named countries are not the
+    hit's date of birth, date of death, or countries-tied-to-the-hit fields."""
+    value = decode_value(value)
+    if value in (None, "", []):
+        return value
+    if isinstance(value, dict):
+        parts = []
+        for key, item in value.items():
+            text = as_text(item)
+            if text:
+                parts.append(f"{key}: {text}" if as_text(key) else text)
+        return "; ".join(parts)
+    return as_text(value)
+
+
 DEFAULT_GROUPS_NOTE = "embedded fallback used only if name_variants.json is missing"
 
 
@@ -120,7 +140,8 @@ def load_name_variants(folder):
     groups, forms = [], []
     if os.path.exists(path):
         try:
-            nv = json.load(open(path, encoding="utf-8-sig"))
+            with open(path, encoding="utf-8-sig") as handle:
+                nv = json.load(handle)
         except Exception:
             nv = None
 

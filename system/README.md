@@ -159,7 +159,7 @@ on the customer's own applicant, like Akin's three). Turned on, it moves 60 dev 
 - **Free text is parsed with patterns, not a model.** Onboarding identity notes are read like this. The name is the longest upper-case token run; if there is none, it is a run of Capitalised words that shares a name part with the person's own records. The DOB is the date nearest a birth keyword (not the note's own date). The document country is a country or demonym outside the name. A note naming a rejected, failed or expired check is not evidence. A name read from a note is used only if it shares at least one part with the person's own records, which guards against parser garbage. Stress test: we rewrote every dev KYC note with Title-Case names. One decision moved (SAME → REVIEW) and none moved towards clearing.
 - **Age statements** are recognised by cue patterns. Profile notes use strong cues only (an age word, or "was / turned N" that ends the clause or is followed by an age word); search snippets also use weak ones. Ages outside 16–100 are dropped. A new phrasing for an age means no DOB from that sentence, which leads to REVIEW, not a clearance. The reverse risk is a number wrongly read as an age, which can clear a hit. That is why weak cues are limited to search snippets that already passed the listing-phrase and country checks.
 - **DD/MM/YYYY is assumed day-first.** An impossible month falls back to the year only.
-- **The dev JSONL files were rebuilt from the organisers' browsing workbook.** The original dev/ files were not publicly downloadable. The loader accepts list fields either as JSON arrays or as "; "-joined strings, and structured address dicts with a `country` key. Profile notes over 32,000 characters were cut in the workbook.
+- **The official input is the organisers' `dev/` folder.** Alerts nest the screened person under `customer`; hits may include a `details` dict (flattened to text, never read as a date of birth, death date, or country), `first`/`middle`/`last_name`, `best_matching_name`, `subcategories`, a null `place_of_birth`, and an integer `match_score`. `name_variants.json` uses `description` and `groups`. The loader also accepts the optional workbook reconstruction under `data/dev/` (list fields as JSON arrays or "; "-joined strings; structured address dicts with a `country` key). Profile notes over 32,000 characters were cut in the workbook form.
 - **Unresolved alerts** (no record fits) go to REVIEW with `customer_record_id = null`. We never clear on unverified screened data alone. This did not happen in dev.
 - **The policy's rules are applied literally.** For example, a location clear only needs every customer country to differ from every hit country. If the bank's systems are missing a country the customer is linked to, that clear can be wrong. That risk comes from the policy, not from the code.
 - **Clears that rest on the policy alone (risky in the real world).** Most dev clears come from LOCATION_MISMATCH (214 location-only) and NAME_MISMATCH_VERIFIED (79 name-only). They follow the SOP to the letter, but they deserve a look:
@@ -172,10 +172,10 @@ on the customer's own applicant, like Akin's three). Turned on, it moves 60 dev 
 - `python3 tools/perturb.py <data folder> [variant…]`: the rewording test above.
 - `python3 redteam/run_all.py --strict`: 48 adversarial synthetic cases (2 open, both F12).
 - `python3 tests/test_ages.py`: age-cue probes (real ages read, counts and money not).
-- `python3 tests/test_loader.py`, `python3 tests/test_runner_boundary.py`: loader tolerance and per-hit fail-safes.
-- `python3 tools/check_submission.py output/dev.jsonl data/dev`: submission format, provenance and 2–4 sentence check.
-- `python3 tools/unseen_sim.py data/dev`: schema mutations (renamed, stringified, nested, missing, corrupt…); no crash, no move to clear.
+- `python3 tests/test_loader.py`, `python3 tests/test_runner_boundary.py`, `python3 tests/test_real_format.py`: loader tolerance, official-format fixtures, and per-hit fail-safes.
+- `python3 tools/check_submission.py output/dev.jsonl dev`: submission format, provenance and 2–4 sentence check.
+- `python3 tools/unseen_sim.py dev`: schema mutations (renamed, stringified, nested, missing, corrupt…); no crash, no move to clear.
 - `python3 tools/shadow.py gen <dir> 7 && system/run <dir> <out> && python3 tools/shadow.py score <dir> <out>`: shadow test set.
-- `python3 tools/ablate.py data/dev`: which dev and practice decisions depend on each component.
+- `python3 tools/ablate.py dev`: which dev and practice decisions depend on each component.
 - `python3 tools/score.py output/dev.jsonl <data folder>/practice_labels.jsonl -v`: local cost score and reason checks.
 

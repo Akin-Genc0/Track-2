@@ -50,6 +50,6 @@ def validate(output, folder):
     return errors
 
 if __name__ == '__main__':
-    errors = validate(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else 'data/dev')
+    errors = validate(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else 'dev')
     print('\n'.join(errors) if errors else 'PASS')
     sys.exit(bool(errors))

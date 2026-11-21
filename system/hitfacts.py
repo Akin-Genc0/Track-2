@@ -138,9 +138,17 @@ class HitFacts:
         self.name = as_text(hit.get("name"))
         self.aliases = as_list(hit.get("aliases"))
         self.names = [self.name] + self.aliases if self.name else list(self.aliases)
+        # Official hits also have first/middle/last_name and best_matching_name (often "Last, First").
+        # Add them as extra names; they are not used as country/DOB/death evidence.
+        extras = [as_text(hit.get("best_matching_name"))]
+        constructed = " ".join(as_text(hit.get(k)) for k in ("first_name", "middle_name", "last_name") if as_text(hit.get(k)))
+        extras.append(constructed)
+        for extra in extras:
+            if extra and extra not in self.names:
+                self.names.append(extra)
         self.categories = as_list(hit.get("categories"))
-        self.phrase = listing_phrase(hit.get("primary_category"), self.categories)
-        # countries tied to the hit
+        self.phrase = listing_phrase(hit.get("primary_category"), self.categories or as_list(hit.get("subcategories")))
+        # countries tied to the hit (structured fields only — never the flattened `details` text)
         self.countries = []
         self.unplaced = []      # place values we cannot tie to any country: never evidence of a different country
         for f in ("countries", "nationality", "citizenship", "addresses", "place_of_birth"):
@@ -256,6 +264,8 @@ class HitFacts:
             if d and re.match(r"^\s*[A-Za-z0-9]", m.group(1)):
                 self.reports.append(d)
         self.earliest_report = min(self.reports, key=lambda d: (d[0], d[1] or 1, d[2] or 1)) if self.reports else None
+        # Date of death is the structured deceased_date only, never dates inside details/profile prose
+        # other than the exact "According to …; <date>:" report form used above.
         self.deceased = parse_date(hit.get("deceased_date"))
 
     def dob_text(self):
