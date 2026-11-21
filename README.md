@@ -1,5 +1,7 @@
 # Clearsight
 
+**Demo video (2 min):** https://files.catbox.moe/8a6ito.mp4
+
 **Clear the noise. Never clear a match.** Team Clearsight’s Track 2 sanctions-screening hackathon entry resolves customer records, compares watchlist evidence, and produces deterministic, cited decisions for analyst review. It runs locally with the Python standard library: no model, API key, or network access is needed. The slogan is our aim, not a guarantee; policy assumptions and parser limitations are documented in the [required system README](system/README.md).
 
 | ![Fathom analyst desk: H-582410 Elvira Velasco Morillo confirmed as a true match](ui/screenshots/01-same-entity-elvira.png) | ![H-13E1CF cleared on temporal impossibility](ui/screenshots/03-cleared-temporal.png) | ![H-0F3C96 left for review: three customers fit and lead to different decisions](ui/screenshots/05-ambiguous-review.png) |
