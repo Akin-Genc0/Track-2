@@ -1,4 +1,13 @@
-# Akin's tasks (Track 2 — code freeze 17:00)
+# Akin's tasks (Team Clearsight, Track 2, code freeze 17:00)
+
+## RIGHT NOW (12:15 plan from Zain + Grok Bot)
+1. **Submission portal:** open /submit on the hackathon site and confirm exactly what it needs (repo link? video link? README path?). Tell Zain.
+2. **Demo video (3 min max):** run `python3 tools/xlsx_to_dev.py && system/run data/dev output/dev.jsonl && python3 ui/serve.py`, open http://127.0.0.1:8765 and screen-record Fathom following `deck/PITCH.md`. Show one SAME_ENTITY, one DIFFERENT_ENTITY and one REVIEW case, plus the cited evidence.
+3. **Hand-check 20 clearances** (section 2 below). Put any hit_ids that look unsafe in `REVIEW_NOTES.md` and push.
+
+Timeline: everything gets merged to `main` by about 16:30. Don't edit `system/decide.py` or `system/hitfacts.py`; Grok Bot + T3 agents are changing those.
+
+---
 
 The working system is on `bot/core-system` (this branch is based on it). Run it:
 
