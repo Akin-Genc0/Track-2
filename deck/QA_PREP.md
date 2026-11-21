@@ -11,7 +11,7 @@ Fifty labels is a sanity check, not proof, and we say so. We wrote the rules fro
 The scoring punishes one wrong clear 20 to 30 times harder than anything else, and the hidden set runs five times. A model that's right 99% of the time but varies between runs is a liability there. Our output is byte-identical across runs, takes about 16 seconds for 819 hits, and every reason is built from record IDs we can point to. Free text is read with patterns. When a pattern fails, we lose a fact, and a lost fact can only lead to review.
 
 **3. Where can you still unsafely clear?**
-Single-ground clears are the risk: 217 dev clears rest on location alone and 79 on a verified name alone. They follow the policy literally, but some look risky in practice, like a bank branch listed in another country or two names sharing a single part. We list them in the README rather than hide them. In production, they're the first thing we'd route to sampled QA in Fathom.
+Single-ground clears are the risk: 217 dev clears rest on location alone and 79 on a verified name alone. They follow the policy literally, but some look risky in practice, like a bank branch listed in another country or two names sharing a single part. We list them in the README rather than hide them. In production, they're the first thing we'd route to sampled QA in Clearsight.
 
 **4. Your review rate is 28%. Isn't that just pushing the work back onto analysts?**
 Review is the cheap error: 2 or 3 points against 60. We still clear 464 of 819 hits (57%) and confirm 125 more, so analysts see 230 instead of 819, which cuts the queue by 72%. Most of the 230 are genuinely missing a fact, usually a date of birth on one side. Even the shadow-set misses all went to review.
@@ -38,7 +38,7 @@ H-009799. An earlier build cleared it on a timeline argument, reading "January 1
 There's no model, no network, no randomness and no clock: the screening date comes from the data. Every input is sorted by ID before we loop over it, merge roots are the smallest record ID, and ties between checks on the same date break on check ID. Two fresh runs come out byte-identical to each other and to the committed `output/dev.jsonl`. Any unexpected error on a hit falls back to review, so every hit always gets one line.
 
 **12. Would a real compliance team use this, and what's the next step?**
-The design fits how compliance gets audited: every decision is a reason code, two to four sentences and record IDs a regulator can open. Fathom puts the customer and list entry side by side with conflicts highlighted, so a reviewer can check a call in seconds. The next steps are sampled QA on single-ground clears, then growing the labelled set from analyst decisions made in Fathom and re-scoring against them.
+The design fits how compliance gets audited: every decision is a reason code, two to four sentences and record IDs a regulator can open. Clearsight puts the customer and list entry side by side with conflicts highlighted, so a reviewer can check a call in seconds. The next steps are sampled QA on single-ground clears, then growing the labelled set from analyst decisions made in Clearsight and re-scoring against them.
 
 ---
 

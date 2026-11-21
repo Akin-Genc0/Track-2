@@ -4,19 +4,19 @@
 
 **Clear the noise. Never clear a match.** Team Clearsight’s Track 2 sanctions-screening hackathon entry resolves customer records, compares watchlist evidence, and produces deterministic, cited decisions for analyst review. It runs locally with the Python standard library: no model, API key, or network access is needed. The slogan is our aim, not a guarantee; policy assumptions and parser limitations are documented in the [required system README](system/README.md).
 
-| ![Fathom analyst desk: H-582410 Elvira Velasco Morillo confirmed as a true match](ui/screenshots/01-same-entity-elvira.png) | ![H-13E1CF cleared on temporal impossibility](ui/screenshots/03-cleared-temporal.png) | ![H-0F3C96 left for review: three customers fit and lead to different decisions](ui/screenshots/05-ambiguous-review.png) |
+| ![Clearsight analyst desk: H-582410 Elvira Velasco Morillo confirmed as a true match](ui/screenshots/01-same-entity-elvira.png) | ![H-13E1CF cleared on temporal impossibility](ui/screenshots/03-cleared-temporal.png) | ![H-0F3C96 left for review: three customers fit and lead to different decisions](ui/screenshots/05-ambiguous-review.png) |
 | --- | --- | --- |
 | **True match.** H-582410: name, DOB and Spain agree; every fact cites its record (NOTE-14E25A, CUS-377745). | **Cleared.** H-13E1CF: the customer was born in 2007, so was at most 12 at the hit’s 2020 report. | **Review.** H-0F3C96: three customers fit the alert and lead to different decisions, so a person decides. |
 
 *Screenshots of the analyst desk (`ui/`) on the current run: 819 hits, 464 cleared, 125 confirmed, 230 for review.*
 
-## Fathom analyst desk
+## Clearsight analyst desk
 
-[Open Fathom in the browser](https://fathom-track2.vercel.app/). Fathom is the static analyst desk for reviewing Clearsight's cited decisions; it never makes or changes a screening decision.
+[Open Clearsight in the browser](https://fathom-track2.vercel.app/). Clearsight is the static analyst desk for reviewing Clearsight's cited decisions; it never makes or changes a screening decision.
 
 - The hosted desk contains the UI and this submission's `output/dev.jsonl`, but **never participant data**. On first visit, drop the organisers' workbook or choose a `dev/` folder. The page reads it locally, builds the review bundle in the browser, and caches it only in that browser; nothing is uploaded.
 - Review the full queue by decision, practice label or disagreement; search by name or ID; inspect customer and list facts side by side; and follow each decision's reason and evidence records. Keyboard shortcuts include `J`/`K` for the queue, `1`–`4` for decision filters, `/` for search and `?` for help.
-- Fathom also includes a person-screening tool, a searchable Link map for exploring connected records, and analyst notes. Use **Load file** to compare a different predictions file, or **Use a different dataset** to clear the browser-local case data.
+- Clearsight also includes a person-screening tool, a searchable Link map for exploring connected records, and analyst notes. Use **Load file** to compare a different predictions file, or **Use a different dataset** to clear the browser-local case data.
 
 For a local desk with the official data folder available, run `python3 ui/serve.py` and open [http://127.0.0.1:8765/](http://127.0.0.1:8765/). To create the same privacy-preserving static site locally, run `sh ui/build-static.sh _site` and serve `_site/` with any static server.
 
@@ -26,7 +26,7 @@ For a local desk with the official data folder available, run `python3 ui/serve.
 | --- | --- |
 | [system/README.md](system/README.md) | The required deliverable: architecture, policy choices, evidence, three worked cases, honest limitations |
 | [Judges' metrics](system/README.md#how-we-score-on-the-judges-metrics) and [Judge Q&A](system/README.md#judge-qa) | Measured unsafe clearances, clearance precision, same-entity recall and review rate on practice and shadow sets; short answers with file and function names |
-| [Live analyst desk (Vercel)](https://fathom-track2.vercel.app) | Fathom in the browser; load the organisers' dev folder or workbook locally, with no upload |
+| [Live analyst desk (Vercel)](https://fathom-track2.vercel.app) | Clearsight in the browser; load the organisers' dev folder or workbook locally, with no upload |
 | [deck/index.html](deck/index.html) | The pitch deck (open in a browser) |
 | [deck/DEMO_SCRIPT_3MIN.md](deck/DEMO_SCRIPT_3MIN.md) | The timed 3-minute live demo script |
 | [ui/screenshots/](ui/screenshots/) | All six analyst-desk screenshots |
@@ -199,7 +199,7 @@ Workbook conversion is optional. If you only have `Screening Dev Set - browse.xl
 | [system/](system/) | Screening implementation and executable `run` entry point |
 | [output/dev.jsonl](output/dev.jsonl) | Submitted development predictions |
 | [deck/](deck/) | Pitch deck; start at [index.html](deck/index.html) |
-| [ui/](ui/) | Fathom analyst review desk, including the browser-local static deployment builder |
+| [ui/](ui/) | Clearsight analyst review desk, including the browser-local static deployment builder |
 | [tests/](tests/) | Synthetic policy regression cases |
 | [tools/](tools/) | Workbook conversion, local scoring and perturbation checks |
 | [FORMAT.md](FORMAT.md) | Input/output format reference |

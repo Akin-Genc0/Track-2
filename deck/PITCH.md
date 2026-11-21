@@ -17,8 +17,8 @@ That's our rule, built into the code: clear only on a contradiction, confirm onl
 ## Slide 4 — Evidence you can audit (1:12–1:32)
 Every fact we hold carries the record ID it came from. When we say this customer was born on 5 March 1968, we cite NOTE-14E25A, the passport check, and that ID goes straight into the evidence list. The reason uses this hit's own dates, countries and names.
 
-## Slide 5 — Fathom (1:32–1:55)
-This is Fathom, our analyst view. All 819 hits, customer and list entry side by side, agreements and conflicts highlighted, with decision, reason and evidence. Here, Mohammad Nadeem Ghani: name, date of birth and country all agree, so it's a true match.
+## Slide 5 — Clearsight (1:32–1:55)
+This is Clearsight, our analyst view. All 819 hits, customer and list entry side by side, agreements and conflicts highlighted, with decision, reason and evidence. Here, Mohammad Nadeem Ghani: name, date of birth and country all agree, so it's a true match.
 
 ## Slide 6 — Results (1:55–2:12)
 On the 50 practice labels: 50 out of 50 decisions correct and zero unsafe clearances. Reason code, customer record and evidence match the reference on all 50. Across the dev set we clear 57 percent of hits and send 28 percent to review.
@@ -27,7 +27,7 @@ On the 50 practice labels: 50 out of 50 decisions correct and zero unsafe cleara
 The unseen set rewords the free text, so we attacked ourselves. A harness rewords our data 16 ways: surname-first names, dates like "third March 1970", lower-case names. Before hardening, one rewording flipped up to 29 decisions toward clearing. After: zero, on every rewording. In our two combined runs, only 2 to 4 of 819 change, all toward review. And output is byte-identical across runs.
 
 ## Slide 8 — Honest limits (2:37–3:00)
-What's missing: 50 labels is a small sample. 217 clears rest on location alone and 79 on a verified name alone. Some, like bank branches abroad, follow the policy literally but look risky; we flag them in the README. Next: route those to sampled QA in Fathom. Safe by design, auditable by default. Thank you.
+What's missing: 50 labels is a small sample. 217 clears rest on location alone and 79 on a verified name alone. Some, like bank branches abroad, follow the policy literally but look risky; we flag them in the README. Next: route those to sampled QA in Clearsight. Safe by design, auditable by default. Thank you.
 
 ---
 
@@ -46,4 +46,4 @@ No model, no network, no randomness, no clock. Every input is sorted by ID befor
 We built a harness that rewords the data 16 ways. Before hardening, one rewording flipped up to 29 decisions toward clearing. After, no rewording moves any decision toward clearing, and two runs combining them change only 2 to 4 of 819 decisions, every one toward REVIEW. When the parser doesn't understand a new phrasing, it loses a fact, and a missing fact leads to REVIEW, not a clearance. We also have 27 tests for rare policy situations, such as a date of death after screening or a DOB one year off.
 
 **5. What's missing? Where would this go wrong?**
-Fifty labels is a small sample, so a perfect practice score is a sanity check, not proof. 217 dev clears rest on location alone and 79 on a verified name alone. Some follow the policy literally but look risky in practice: bank branch listings in other countries, or names sharing a single part. We list examples in the README rather than hide them. Free text is read with patterns, not a model, so a new way of writing an age gives no date and goes to review. Next we'd send those single-signal clears to sampled QA and grow the labelled set from analyst decisions in Fathom.
+Fifty labels is a small sample, so a perfect practice score is a sanity check, not proof. 217 dev clears rest on location alone and 79 on a verified name alone. Some follow the policy literally but look risky in practice: bank branch listings in other countries, or names sharing a single part. We list examples in the README rather than hide them. Free text is read with patterns, not a model, so a new way of writing an age gives no date and goes to review. Next we'd send those single-signal clears to sampled QA and grow the labelled set from analyst decisions in Clearsight.

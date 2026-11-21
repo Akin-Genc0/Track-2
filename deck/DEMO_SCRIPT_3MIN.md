@@ -25,15 +25,15 @@ python3 ui/serve.py                          # http://127.0.0.1:8765/
 
 ## 1. Hook: the problem (0:00–0:20)
 
-▶ Deck slide 2 (cost table), or the Fathom queue on tab 1.
+▶ Deck slide 2 (cost table), or the Clearsight queue on tab 1.
 
 **"Every bank screens every customer against sanctions lists, and nearly every hit is noise. Analysts burn hours clearing them. But one wrong clearance means you have just banked a sanctioned drug trafficker. The scoring here says exactly that: a wrong clear costs 60 points and every other mistake costs 2 or 3. So the job isn't to clear everything. It's to clear only what you can prove."**
 
 ## 2. What we built (0:20–0:40)
 
-▶ Stay on Fathom and point at the counts in the top bar.
+▶ Stay on Clearsight and point at the counts in the top bar.
 
-**"We're Clearsight. Our engine reads all 819 dev hits, finds the right customer among 72,265 records, and returns a decision, a reason code, a plain-English reason and the exact record IDs behind it. It's plain Python with no model and no network, and the output is identical on every run. This is Fathom, our analyst desk, showing those decisions."**
+**"We're Clearsight. Our engine reads all 819 dev hits, finds the right customer among 72,265 records, and returns a decision, a reason code, a plain-English reason and the exact record IDs behind it. It's plain Python with no model and no network, and the output is identical on every run. This is Clearsight, our analyst desk, showing those decisions."**
 
 ## 3. Live walkthrough (0:40–1:55)
 
@@ -65,7 +65,7 @@ python3 ui/serve.py                          # http://127.0.0.1:8765/
 
 ## 4. Safety design (1:55–2:20)
 
-▶ Deck slide 3, or just talk over Fathom.
+▶ Deck slide 3, or just talk over Clearsight.
 
 **"Safety is built into the code as three rules. Clear only on a hard contradiction: date of birth, verified name, location, entity type, date of death or a timeline impossibility. Confirm only when the facts agree. Everything else goes to review. If the parser doesn't understand a sentence, we lose that fact, and a missing fact can only push a hit toward review, never toward a clear. If any hit errors out, it falls back to review."**
 
@@ -81,7 +81,7 @@ python3 ~/Track-2-data/screening/validate.py --data ~/Track-2-data/screening/dev
 
 ## 6. Why we win (2:45–3:00)
 
-▶ Back to Fathom on H-009799.
+▶ Back to Clearsight on H-009799.
 
 **"We clear 57 percent of the queue, every clear backed by a record ID you can open, and zero unsafe clears on every labelled set we have. The test runs five times, and we give the same answer every time. Clearsight clears the noise and never clears a match. Thank you."**
 

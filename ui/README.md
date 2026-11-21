@@ -1,4 +1,4 @@
-# Fathom — watchlist entity review
+# Clearsight — watchlist entity review
 
 A static analyst desk for Track 2 sanctions / PEP / adverse-media hits. It does **not** decide cases. It reads the development data and the decision system’s `output/dev.jsonl` (or clearly marked sample predictions while that file is missing) and presents a review queue.
 

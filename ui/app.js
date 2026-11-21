@@ -1,4 +1,4 @@
-/* Fathom — analyst review desk for Track 2 watchlist hits. */
+/* Clearsight — analyst review desk for Track 2 watchlist hits. */
 (() => {
   "use strict";
 

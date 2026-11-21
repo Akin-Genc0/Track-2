@@ -1,4 +1,4 @@
-/* Fathom data loader for static hosting (GitHub Pages).
+/* Clearsight data loader for static hosting (GitHub Pages).
  *
  * When there is no server-built data/bundle.json, the analyst drops the organisers'
  * workbook ("Screening Dev Set - browse.xlsx") or a dev/ folder of JSON Lines files.
