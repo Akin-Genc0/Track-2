@@ -115,6 +115,10 @@ case("non_qualifying_report", [cust("CUS-000023", "Tom Okeke", "2004-01-01")], a
 case("list_numbers_not_ages", [cust("CUS-000024", "Rob James", "1955-01-01")], alert("A-000024", "Rob James", "ACC-24"),
      hit("A-000024", "Robert James", countries=["United Kingdom"], notes="According to Regulator X; September 15, 2005: order issued as the security was not (1) covered, (2) exempt or (3) registered."),
      "REVIEW", accounts=[acc("ACC-24", "CUS-000024")])
+# 23 a month-only dated report ("According to ...; January 1997:") is not the policy's full-date form and never clears
+case("month_only_report", [cust("CUS-000025", "Jim Okafor", "1993-03-11")], alert("A-000025", "Jim Okafor", "ACC-25"),
+     hit("A-000025", "James Okafor", countries=["United Kingdom"], notes="According to Regulator X; January 1997: James Okafor was fined."),
+     "REVIEW", accounts=[acc("ACC-25", "CUS-000025")])
 
 fails = 0
 for c in CASES:

@@ -257,11 +257,12 @@ class HitFacts:
                         self.search_hits.append(rid)
                 if self.dobs:
                     self.dob_source = "search results"
-        # dated reports: "According to ...; <date>: ..."
+        # dated reports: "According to ...; <date>: ..." -- the policy's form is a full date ("September 10, 2025");
+        # month-only or year-only lines ("According to ...; January 1997:") are other wordings and never clear a hit.
         self.reports = []
         for m in _REPORT_RE.finditer(notes):
             d = parse_date(m.group(1))
-            if d and re.match(r"^\s*[A-Za-z0-9]", m.group(1)):
+            if d and d[1] and d[2] and re.match(r"^\s*[A-Za-z0-9]", m.group(1)):
                 self.reports.append(d)
         self.earliest_report = min(self.reports, key=lambda d: (d[0], d[1] or 1, d[2] or 1)) if self.reports else None
         # Date of death is the structured deceased_date only, never dates inside details/profile prose

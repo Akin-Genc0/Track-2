@@ -32,7 +32,7 @@ There is no randomness, no model, no network and no clock. Every input is sorted
 
 ## Results on the development set
 - 50 practice labels: 50/50 decisions correct, 0 unsafe clearances, local decision score 1.000. Reason code fits 50/50, customer record right 50/50, evidence identical to the reference on all 50.
-- All 819 dev hits: 465 DIFFERENT_ENTITY (56.8%), 125 SAME_ENTITY (15.3%), 229 REVIEW (28.0% review rate). The same run with any `PYTHONHASHSEED` gives byte-identical output.
+- All 819 dev hits: 464 DIFFERENT_ENTITY (56.7%), 125 SAME_ENTITY (15.3%), 230 REVIEW (28.1% review rate); see `audit/CROSSCHECK_JOHN.md` for the cross-check that moved one clear to REVIEW. The same run with any `PYTHONHASHSEED` gives byte-identical output.
 - Final integrated tree (after merging the loader hardening and repo polish): `tools/check_submission.py` passes on `output/dev.jsonl` (every row valid, every reason 2–4 sentences, every conclusive decision cites evidence); `tests/test_policy.py` 23/23, `tests/test_ages.py` 21/21, `tests/test_loader.py` and `tests/test_runner_boundary.py` pass; `redteam/run_all.py --strict` fails only the 2 F12 team-call cases; shadow seeds 7 and 21 score 0.965 with 0 unsafe; `tools/unseen_sim.py` shows 0 crashes, 0 missing rows and 0 moves to clear across 7 schema mutations; no `tools/perturb.py` rewrite moves a decision towards DIFFERENT_ENTITY.
 - [Spot check of 20 clears and 10 reviews](../REVIEW_NOTES.md): three clears warrant checking the link between the screened holder and the approved identity check. The practice score does not measure this risk across the unlabelled set.
 

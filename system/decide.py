@@ -161,6 +161,8 @@ class Decider:
             vparts = self.m.parts(vname, prof.company)
             # names in different scripts cannot be compared: 'ИВАН ПЕТРОВ' vs 'Petrov, Ivan' is no evidence either way
             comparable = latin(vname) and any(latin(n) for n in hit.names)
+            # without name_variants.json short forms ('Mide' / 'Olumide') look like different names: never clear a person on name then
+            comparable = comparable and (prof.company or bool(self.m.group_of))
             if vparts and (prof.company or len(vparts) >= 2) and not n_agree and comparable and not getattr(prof, "verified_name_weak", False):
                 contra["NAME_MISMATCH_VERIFIED"] = (
                     f"The customer's verified name is {vname} ({vsrc}), which does not match the hit's name {hit.name}.", [vsrc])
