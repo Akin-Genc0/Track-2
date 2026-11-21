@@ -262,6 +262,11 @@ class Decider:
                 if e not in ev:
                     ev.append(e)
             code = "NAME_DOB_LOCATION_MATCH" if shared else "NAME_DOB_MATCH"
+            if not shared:
+                # say why no country was compared (a disjoint pair went to review above, so one side has none)
+                side = ("neither the customer nor the hit lists a country" if not cust_c and not hit_c else
+                        "the hit lists no country" if not hit_c else "the customer has no country on file")
+                loc_txt = f"No country could be compared because {side}, so the match rests on name and date of birth."
             return dict(explain({"sentences": [dob_agree_txt, loc_txt, name_txt], "context": [compared(None)], "evidence": ev}),
                         decision="SAME_ENTITY", reason_code=code)
         if prof.company and n_agree and shared:
@@ -276,7 +281,10 @@ class Decider:
         if not n_agree:
             missing.append("the names cannot be confirmed to agree" if n_usable else "the customer's name has too few real parts to compare")
         if not prof.company and not dob_agree:
-            missing.append("the date of birth cannot be compared with it" if not (hit_dobs and dobs) else "the dates of birth do not clearly agree")
+            missing.append("the dates of birth do not clearly agree" if hit_dobs and dobs else
+                           "neither the customer nor the hit gives a date of birth to compare" if not hit_dobs and not dobs else
+                           "the hit gives no date of birth to compare with the customer's" if not hit_dobs else
+                           "the customer has no date of birth on file to compare with the hit's")
         if prof.company and not shared:
             missing.append("no country is shared")
         ev = []

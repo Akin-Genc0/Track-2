@@ -78,7 +78,7 @@ make test                                       # data-free policy, loader and p
 `make test` runs these, which you can also run directly:
 
 ```sh
-python3 tests/test_policy.py          # 25 synthetic rare-situation policy cases
+python3 tests/test_policy.py          # 27 synthetic rare-situation policy cases
 python3 tests/test_ages.py
 python3 tests/test_textutil.py
 python3 tests/test_loader.py
