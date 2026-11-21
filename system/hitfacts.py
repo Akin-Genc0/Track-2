@@ -238,7 +238,8 @@ class HitFacts:
                     snip = as_text(sr.get("snippet")) + " " + as_text(sr.get("title"))
                     if self.phrase not in fold(snip):
                         continue
-                    if not (set(countries_in_text(snip)) & set(self.countries)):
+                    match_c = sorted(set(countries_in_text(snip)) & set(self.countries))
+                    if not match_c:
                         continue
                     ys = years_from_age(as_text(sr.get("snippet")), weak=True)
                     born = None
@@ -250,10 +251,10 @@ class HitFacts:
                             born = ds[0][2]
                     rid = as_text(sr.get("result_id"))
                     if born:
-                        self.dobs.append({"years": {born[0]}, "m": born[1], "d": born[2], "src": rid, "kind": "search", "text": snip})
+                        self.dobs.append({"years": {born[0]}, "m": born[1], "d": born[2], "src": rid, "kind": "search", "text": snip, "ctry": match_c})
                         self.search_hits.append(rid)
                     elif ys:
-                        self.dobs.append({"years": ys[0][1], "m": None, "d": None, "src": rid, "kind": "search", "text": snip})
+                        self.dobs.append({"years": ys[0][1], "m": None, "d": None, "src": rid, "kind": "search", "text": snip, "ctry": match_c})
                         self.search_hits.append(rid)
                 if self.dobs:
                     self.dob_source = "search results"

@@ -138,6 +138,33 @@ case("onboarding_no_account_shared_holder", [cust("CUS-000031", "Jake Moran", "1
      alert("A-000031", "Jake Moran", "ACC-31"), hit("A-000031", "Moran, Jake", countries=["United Kingdom"]), "REVIEW",
      accounts=[acc("ACC-31", "CUS-000031"), acc("ACC-31", "CUS-000032")],
      onboarding=[onb(None, "CUS-000031", "APP-31")], kyc=[chk("KYC-31", "APP-31", "Linda Moran", "1982-02-02", "United Kingdom", "approved", "2024-01-01")])
+# 28 same year, day and month swapped: not a contradiction, and the reason says so
+case("dob_day_month_swap", [cust("CUS-000033", "Igor Volkov", "1980-04-03")], alert("A-000033", "Igor Volkov", "ACC-33"),
+     hit("A-000033", "Volkov, Igor", dobs=["1980-03-04"], countries=["United Kingdom"]), "REVIEW", accounts=[acc("ACC-33", "CUS-000033")],
+     says=["day and month swapped"])
+# 29 a swap with agreeing names also stops a country clear (the dates may well agree)
+case("dob_swap_blocks_location", [cust("CUS-000034", "Igor Volkova", "1980-04-03")], alert("A-000034", "Igor Volkova", "ACC-34"),
+     hit("A-000034", "Volkova, Igor", dobs=["1980-03-04"], countries=["Peru"]), "REVIEW", accounts=[acc("ACC-34", "CUS-000034")],
+     says=["day and month swapped"])
+# 30 a phone note saying the record DOB is a typo blocks a DOB clear
+case("note_disputes_record_dob", [cust("CUS-000035", "Ivan Sokolov", "1990-05-01", email="is@x.example")], alert("A-000035", "Ivan Sokolov", "ACC-35"),
+     hit("A-000035", "Sokolov, Ivan", dobs=["1970-05-01"], countries=["United Kingdom"]), "REVIEW", accounts=[acc("ACC-35", "CUS-000035")],
+     notes=[{"note_id": "NOTE-35", "requester_email": "is@x.example", "created_at": "2024-01-01", "channel": "phone",
+             "text": "Customer called: the date of birth on file is a typo, correct year is 1970."}], says=["NOTE-35", "on file is wrong"])
+# 31 a verified-name clear names every hit name it was compared with
+case("verified_name_lists_aliases", [cust("CUS-000036", "Sam Reed", "1980-01-01")], alert("A-000036", "Sam Reed", "ACC-36"),
+     hit("A-000036", "Reed, Samuel", aliases=["Sammy Reed"], countries=["United Kingdom"]), "DIFFERENT_ENTITY", "NAME_MISMATCH_VERIFIED",
+     accounts=[acc("ACC-36", "CUS-000036")], onboarding=[onb("ACC-36", "CUS-000036", "APP-36")],
+     kyc=[chk("KYC-36", "APP-36", "Laura Reed", "1980-01-01", "United Kingdom", "approved", "2024-01-01")], says=["Reed, Samuel; Sammy Reed"])
+# 32 a birth date from a search result says why it was used
+case("search_dob_says_why", [cust("CUS-000037", "Paolo Conti", "1985-01-01", nat="Italy", res="IT")], alert("A-000037", "Paolo Conti", "ACC-37"),
+     hit("A-000037", "Conti, Paolo", countries=["Italy"]), "DIFFERENT_ENTITY", "DOB_MISMATCH", accounts=[acc("ACC-37", "CUS-000037")],
+     search=[{"result_id": "SR-37", "query": "Paolo Conti", "title": "Paolo Conti", "snippet": "Paolo Conti, a politically exposed person in Italy, born 1950."}],
+     says=["SR-37", "used only because the search query, the listing phrase", "Italy all matched"])
+# 33 a place that cannot be tied to a country stops a country clear, and the reason says so
+case("unplaced_country_says_why", [cust("CUS-000038", "Ali Rahimi", None)], alert("A-000038", "Ali Rahimi", "ACC-38"),
+     hit("A-000038", "Rahimi, Ali", countries=["Peru", "Zentravia"]), "REVIEW", accounts=[acc("ACC-38", "CUS-000038")],
+     says=["Zentravia", "cannot be tied to a country"])
 
 fails = 0
 for c in CASES:

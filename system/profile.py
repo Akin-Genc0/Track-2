@@ -19,6 +19,10 @@ _POS_RE = re.compile(r"\b(?:approved|passed|verified|cleared|successful(?:ly)?|a
 # the note is about someone else on the same email (families share emails): not identity evidence for this person
 _REL_RE = re.compile(r"\b(?:spouse|wife|husband|son|daughter|mother|father|partner|child|children|sibling|brother|sister|guardian|"
                      r"dependa?nt|minor|joint (?:account )?holder|on behalf of)\b", re.I)
+# a support note saying the date of birth on file is wrong: not an identity check, but the record DOB is then in doubt
+_DOB_DISPUTE_RE = re.compile(r"(?:date of birth|\bdob\b|d\.o\.b|birth ?date)[^.;]{0,60}?\b(?:typo|wrong|incorrect|mistake\w*|error|"
+                             r"mis-?typed|not (?:correct|right)|needs? (?:correcting|updating|to be (?:corrected|updated)))\b|"
+                             r"\b(?:typo|wrong|incorrect|mistake\w*|error|mis-?typed)\b[^.;]{0,40}?(?:date of birth|\bdob\b|d\.o\.b|birth ?date)", re.I)
 _LIVED_RE = re.compile(r"\b(?:lived|lives|living|resid\w*|based in|employed|works? in|worked in|relocat\w*|moved to)\b", re.I)
 _PARTICLES = {"da", "de", "del", "della", "di", "do", "dos", "das", "du", "van", "von", "der", "den", "ter", "bin", "ibn", "bint",
               "al", "el", "la", "le", "y", "e"}
@@ -182,6 +186,7 @@ class Profile:
             if c:
                 self.countries.setdefault(c, set()).add(src)
         self.unplaced = []      # residence / nationality values we cannot place: never evidence of a different country
+        self.unplaced_src = []  # the record or note ID holding each unplaced value
         for r in self.records:
             for f in ("residence_country", "nationality"):
                 # 'Russia, Cyprus', 'Russian/Cypriot', 'ru', 'Korea, Republic of': every country the value names
@@ -190,6 +195,7 @@ class Profile:
                     add(c, r)
                 if not ok:
                     self.unplaced.append(as_text(C[r].get(f)))
+                    self.unplaced_src.append(r)
         # identity checks
         checks = []
         for r in self.records:
@@ -199,6 +205,7 @@ class Profile:
                                "date": parse_date(k.get("checked_at")),
                                "approved": approved_result(as_text(k.get("result"))), "source": "kyc"})
         self.residence_notes = []
+        self.dob_disputed = []  # non-identity notes saying the record date of birth is wrong
         seen_notes = set()
         for r in self.records:
             for n in idx.notes_by_email.get(as_text(C[r].get("email")).lower(), []):
@@ -211,11 +218,14 @@ class Profile:
                     p["name"] = strip_titles(p["name"])
                     checks.append(p)
                     continue
+                if _DOB_DISPUTE_RE.search(as_text(n.get("text"))):
+                    self.dob_disputed.append(nid)
                 found = countries_in_text(as_text(n.get("text")))
                 for c in found:
                     add(c, nid)
                     self.residence_notes.append((c, nid))
                 if not found and _LIVED_RE.search(as_text(n.get("text"))) and "address on file" not in as_text(n.get("text")).lower():
+                    self.unplaced_src.append(nid)
                     self.unplaced.append(nid)     # says where they lived or worked, but names no country we know
         # a note with both an approval and a negative word is ambiguous: it never supplies clearing facts, but
         # screen.py re-decides with it counted as approved, and if that stops the clear the hit goes to REVIEW

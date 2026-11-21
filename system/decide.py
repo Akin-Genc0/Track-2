@@ -16,8 +16,16 @@ DOUBTFUL_LINK_REVIEW = False
 CLEAR_PRIORITY = ["ENTITY_TYPE_MISMATCH", "DECEASED", "TEMPORAL_IMPOSSIBILITY", "DOB_MISMATCH", "NAME_MISMATCH_VERIFIED", "LOCATION_MISMATCH"]
 
 
+def dob_swapped(cd, hd):
+    """Same year with day and month swapped (03/04 vs 04/03): the classic data-entry error, never a contradiction."""
+    return (len(hd["years"]) == 1 and cd[0] in hd["years"] and bool(cd[1] and cd[2] and hd["m"] and hd["d"])
+            and cd[1] != cd[2] and cd[1] == hd["d"] and cd[2] == hd["m"])
+
+
 def dob_contradicted(cd, hd):
     """Customer DOB cd=(y,m,d) contradicts hit birth date hd? (more than 1 year outside, or same year and month/day differ)"""
+    if dob_swapped(cd, hd):
+        return False
     ys = sorted(hd["years"])
     y = cd[0]
     if y < ys[0] - 1 or y > ys[-1] + 1:
@@ -55,6 +63,13 @@ def max_age_at(dob, when):
 def latin(name):
     """At least two Latin letters once accents are folded."""
     return len(re.findall(r"[a-z]", fold(name or ""))) >= 2
+
+
+def names_list(names):
+    """'A' or 'A; B; C' (names hold commas: 'Petrov, Ivan'); more than five names end with how many others were compared."""
+    # an abbreviation's full stop ('Pte. Ltd.') would read as a sentence end inside the reason
+    names = list(dict.fromkeys(re.sub(r"\.(?=\s|$)", "", n) for n in names if n))
+    return "; ".join(names[:5] + ([f"{len(names) - 5} other listed names"] if len(names) > 5 else []))
 
 
 def and_join(xs):
@@ -115,6 +130,9 @@ class Decider:
             contra["DECEASED"] = (f"The hit's profile gives a date of death of {fmt_date(hit.deceased)}, before the customer was screened on {fmt_date(screened)}.",
                                   [prof.primary])     # the death date is the hit's own fact; cite the screened customer record
         dobs = prof.dobs()
+        # a support note says the record date of birth is wrong (no verified DOB replaces it): it may not clear the hit
+        dob_disputed = [] if prof.verified_dob else list(prof.dob_disputed)
+        dob_blocked = []     # clearing codes a disputed record DOB would have given
         # temporal
         if hit.earliest_report and dobs:
             r = hit.earliest_report
@@ -125,7 +143,9 @@ class Decider:
                         f"The customer was incorporated {'in' if d[1] is None else 'on'} {fmt_date(d)} ({src}), after the hit's earliest dated report on {fmt_date(r)}.", [src])
             else:
                 ages = [(max_age_at(d, r), d, src) for d, src in dobs]
-                if all(a < 16 for a, _, _ in ages):
+                if all(a < 16 for a, _, _ in ages) and dob_disputed:
+                    dob_blocked.append("TEMPORAL_IMPOSSIBILITY")
+                elif all(a < 16 for a, _, _ in ages):
                     a, d, src = max(ages, key=lambda x: x[0])
                     contra["TEMPORAL_IMPOSSIBILITY"] = (
                         f"The customer was born {'in' if d[1] is None else 'on'} {fmt_date(d)} ({src}), so they "
@@ -135,7 +155,20 @@ class Decider:
         hit_dobs = [d for d in hit.dobs if not prof.company or d["kind"] == "field"]
         dob_agree = False
         dob_agree_src = []
-        if hit_dobs and dobs:
+        swapped = [(cd, src, hd) for cd, src in dobs for hd in hit_dobs if dob_swapped(cd, hd)]
+
+        def search_basis(hds):
+            """Why a search result's birth date counts: its query, listing phrase and a hit country all matched."""
+            hds = [hd for hd in hds if hd.get("kind") == "search"]
+            if not hds:
+                return ""
+            ids = sorted({hd["src"] for hd in hds if hd["src"]})
+            cs = sorted({c for hd in hds for c in hd.get("ctry", ())})
+            return (f" (from {and_join(ids)}, used only because the search query, the listing phrase '{hit.phrase}' and "
+                    f"the hit's country {and_join(cs)} all matched)")
+        if hit_dobs and dobs and dob_disputed and all(all(dob_contradicted(cd, hd) for hd in hit_dobs) for cd, _ in dobs):
+            dob_blocked.append("DOB_MISMATCH")
+        elif hit_dobs and dobs:
             if all(all(dob_contradicted(cd, hd) for hd in hit_dobs) for cd, _ in dobs):
                 d, src = dobs[0]
                 ev = [s for _, s in dobs] + sorted({hd["src"] for hd in hit_dobs if hd["src"]})
@@ -144,18 +177,18 @@ class Decider:
                         "profile notes": "profile notes give its date of birth as" if exact else "profile notes put its birth year at",
                         "search results": "search results give its date of birth as" if exact else "search results put its birth year at"}.get(hit.dob_source, "birth date is")
                 lbl = "incorporation date" if prof.company else "date of birth"
-                contra["DOB_MISMATCH"] = (f"The customer's {lbl} is {fmt_date(d)} ({src}) but the hit's {what} {hit.dob_text()}.", ev)
+                contra["DOB_MISMATCH"] = (f"The customer's {lbl} is {fmt_date(d)} ({src}) but the hit's {what} {hit.dob_text()}{search_basis(hit_dobs)}.", ev)
                 # after the timing sentence, which already gives the customer's date: say only what the hit's date adds
                 hit_src = {"profile notes": "date of birth in its profile notes",
                            "search results": "date of birth in search results"}.get(hit.dob_source, "listed " + lbl)
-                dob_also = f"The customer's {lbl} also contradicts the hit's {hit_src}, {hit.dob_text()}."
+                dob_also = f"The customer's {lbl} also contradicts the hit's {hit_src}, {hit.dob_text()}{search_basis(hit_dobs)}."
             else:
                 for cd, src in dobs:
                     agreeing = [hd for hd in hit_dobs if dob_agrees(cd, hd)]
                     if agreeing:
                         dob_agree = True
                         dob_agree_src = [src] + sorted({hd["src"] for hd in agreeing if hd["src"]})
-                        dob_agree_txt = f"The customer's date of birth {fmt_date(cd)} ({src}) agrees with the hit's {hit.dob_text()}."
+                        dob_agree_txt = f"The customer's date of birth {fmt_date(cd)} ({src}) agrees with the hit's {hit.dob_text()}{search_basis(agreeing)}."
                         break
                 if dob_agree and not all(any(dob_agrees(cd, hd) for hd in hit_dobs) for cd, _ in dobs):
                     dob_agree = False     # declared DOBs disagree among themselves
@@ -171,12 +204,14 @@ class Decider:
             # one spelling step away from agreeing through a listed variant is doubt, not a contradiction
             comparable = comparable and not any(self.m.agree_parts_loose(vparts, self.m.parts(n, hit.company or prof.company)) for n in hit.names)
             if vparts and (prof.company or len(vparts) >= 2) and not n_agree and comparable and not getattr(prof, "verified_name_weak", False):
+                compared_names = f"the hit's name {hit.names[0]}" if len(set(hit.names)) == 1 else f"any of the hit's names ({names_list(hit.names)})"
                 contra["NAME_MISMATCH_VERIFIED"] = (
-                    f"The customer's verified name is {vname} ({vsrc}), which does not match the hit's name {hit.name}.", [vsrc])
+                    f"The customer's verified name is {vname} ({vsrc}), which does not match {compared_names}.", [vsrc])
         # location
         shared = sorted(cust_c & hit_c)
+        loc_unplaced = bool(cust_c and hit_c and not shared and (hit.unplaced or prof.unplaced) and not (n_agree and dob_agree))
         if cust_c and hit_c and not shared and not hit.unplaced and not prof.unplaced:
-            if not (n_agree and dob_agree):
+            if not (n_agree and (dob_agree or swapped)):
                 ev = sorted({s for c in cust_c for s in prof.countries[c]})
                 contra["LOCATION_MISMATCH"] = (
                     f"The customer is linked only to {', '.join(sorted(cust_c))} but the hit is linked only to {', '.join(sorted(hit_c))}.", ev)
@@ -199,7 +234,8 @@ class Decider:
                        for rn, _ in prof.record_names for n in hit.names):
                     tail = "the customer's own record name agrees with the hit, but the verified legal name outranks it and is enough to clear the hit under the policy."
                 else:
-                    tail = f"the customer's record names do not agree with the hit's name {hit.name} either, and the verified legal name is enough to clear the hit under the policy."
+                    them = "any of them" if len(set(hit.names)) > 1 else "the hit's name"
+                    tail = f"the customer's record names do not agree with {them} either, and the verified legal name is enough to clear the hit under the policy."
             elif n_agree:
                 out.append(f"the customer's name agrees with the hit's name {hn}")
             else:
@@ -211,6 +247,8 @@ class Decider:
                     out.append("the hit gives no date of birth to compare")
                 elif not dobs:
                     out.append("the customer has no date of birth on file")
+                elif swapped:
+                    out.append(f"the customer's date of birth {fmt_date(swapped[0][0])} has the same year as the hit's {hit.dob_text()} with the day and month swapped")
                 else:
                     out.append(f"the customer's date of birth {fmt_date(dobs[0][0])} does not contradict the hit's {hit.dob_text()}")
             if code != "LOCATION_MISMATCH":
@@ -283,10 +321,40 @@ class Decider:
         for e in loc_src + (dob_agree_src if dob_agree else []):
             if e not in ev:
                 ev.append(e)
+        # what stopped a clear the facts alone would have given: each says why, and cites the record that stopped it
+        why = []
+        if dob_blocked:
+            d, src = dobs[0]
+            why.append(f"Note {and_join(dob_disputed)} says the customer's date of birth on file is wrong, so the record date of birth "
+                       f"{fmt_date(d)} ({src}) is not used to clear the hit against its {hit.dob_text()}.")
+            ev += [e for e in dob_disputed + [src] if e not in ev]
+        if swapped and not dob_blocked:
+            cd, src, hd = swapped[0]
+            why.append(f"The customer's date of birth {fmt_date(cd)} ({src}) and the hit's {hit.dob_text()} have the same year with the day "
+                       "and month swapped, a common data-entry error, so they are not treated as a contradiction"
+                       + (f"; with the names agreeing, the country difference ({', '.join(sorted(cust_c))} against {', '.join(sorted(hit_c))}) "
+                          "cannot clear the hit either." if n_agree and cust_c and hit_c and not shared and not loc_unplaced else "."))
+            ev += [e for e in [src] + ([hd["src"]] if hd["src"] else []) if e not in ev]
+        if loc_unplaced:
+            what = []
+            if hit.unplaced:
+                what.append(f"the hit's place '{names_list(hit.unplaced)}' cannot be tied to a country")
+            if prof.unplaced:
+                srcs = list(dict.fromkeys(prof.unplaced_src))
+                what.append(f"the customer's {and_join(srcs)} names a place that cannot be tied to a country")
+                ev += [e for e in srcs if e not in ev]
+            why.append(f"The customer is linked to {', '.join(sorted(cust_c))} and the hit to {', '.join(sorted(hit_c))}, but "
+                       f"{and_join(what)}, so the country difference cannot clear the hit.")
         if not ev:
             ev = list(nsrc) or [prof.primary]
         tail = "Nothing in the customer's records contradicts the hit, and " + " and ".join(missing) + ", so the hit can be neither cleared nor confirmed."
-        return dict(explain({"sentences": [loc_txt, name_txt, tail], "context": [compared(None)], "evidence": ev}),
+        if why:
+            tail = "Because " + " and ".join(missing) + ", the hit can be neither cleared nor confirmed." if missing else \
+                "So a person must review the hit."
+        sentences = [x for x in [loc_txt, name_txt] if x] + why + [tail]
+        while len(sentences) > 4:
+            sentences.pop(0)      # keep the stopping facts and the conclusion; drop agreement sentences first
+        return dict(explain({"sentences": sentences, "context": [compared(None)], "evidence": ev}),
                     decision="REVIEW", reason_code="INSUFFICIENT_DATA")
 
     def decide_unresolved(self, hit, alert, path):
