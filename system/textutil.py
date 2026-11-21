@@ -105,6 +105,18 @@ def date_lt(a, b):
     return a_hi < b_lo
 
 
+_APPROVED_WORDS = {"approved", "passed", "pass", "clear", "cleared", "verified", "success", "successful", "accepted"}
+_RESULT_NEG = re.compile(r"\b(?:not|no|un\w*|re-?submit\w*|reject\w*|fail\w*|declin\w*|expir\w*|pending|refer\w*|review|consider)\b")
+
+
+def approved_result(v):
+    """A KYC result is approved when its first word is an approval word and nothing negates it
+    ('approved', 'Approved ', 'APPROVED - clear'; never 'not approved' or 'expired - resubmit')."""
+    t = fold(v or "").strip()
+    words = re.findall(r"[a-z]+", t)
+    return bool(words) and words[0] in _APPROVED_WORDS and not _RESULT_NEG.search(t)
+
+
 _COMPANY_KIND = re.compile(r"compan|corp|organi[sz]|entity|business|firm|vessel|ship|aircraft|bank|trust|partnership|fund|foundation|"
                            r"agency|government|enterprise|institution|association|\b(?:llc|ltd|inc|plc)\b")
 _PERSON_KIND = re.compile(r"individual|person|natural|human")

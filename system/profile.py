@@ -4,10 +4,9 @@ One person's facts from all their records: names, declared and verified DOB, ver
 Verified beats declared: the most recent APPROVED identity check (KYC provider or onboarding note) wins."""
 import re
 from data import as_text
-from textutil import parse_date, find_dates, fold, entity_kind, placeholder_dob
+from textutil import parse_date, find_dates, fold, entity_kind, placeholder_dob, approved_result
 from countries import norm_country, countries_in_text, countries_in_value
 
-APPROVED = {"approved", "passed", "pass", "clear", "cleared", "verified", "success", "successful", "accepted"}
 _DOC_RE = re.compile(r"passport|national id|identity card|id card|identity document|driv(?:ing|er'?s?) licen[cs]e|residence permit|registry extract|"
                      r"company registry|registration certificate|certificate of incorporation|document|\bid\b", re.I)
 _VERIFY_RE = re.compile(r"verif|validat|confirm|approv|clear|vet|pass|check|screen|match|authenticat|onboard|kyc|identity", re.I)
@@ -198,7 +197,7 @@ class Profile:
                 checks.append({"id": as_text(k.get("check_id")), "name": strip_titles(as_text(k.get("verified_name"))) or None,
                                "dob": None if placeholder_dob(parse_date(k.get("verified_dob"))) else parse_date(k.get("verified_dob")), "country": norm_country(k.get("document_country"), codes_any_case=True),
                                "date": parse_date(k.get("checked_at")),
-                               "approved": as_text(k.get("result")).lower() in APPROVED, "source": "kyc"})
+                               "approved": approved_result(as_text(k.get("result"))), "source": "kyc"})
         self.residence_notes = []
         seen_notes = set()
         for r in self.records:

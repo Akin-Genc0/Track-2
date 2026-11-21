@@ -383,6 +383,14 @@ def v_malformed_alerts(t, rnd, ctx):
     t["hits"].append({"hit_id": "H-ORPHAN2", "alert_id": "A-NOCUST", "entity_type": "Individual", "name": "Nobody Else", "dobs": None})
 
 
+def v_kyc_result(t, rnd, ctx):
+    syn = {"approved": ["Approved", "APPROVED", "approved ", "passed", "Pass", "clear", "verified", "Approved - clear"],
+           "rejected": ["Rejected", "REJECTED", "declined", "failed"], "expired": ["Expired", "EXPIRED", "expired - resubmit"]}
+    for k in t["kyc_checks"]:
+        if k.get("result") in syn: k["result"] = rnd.choice(syn[k["result"]])
+        k["checked_at"] = redate(k.get("checked_at"), rnd)
+
+
 def v_all(t, rnd, ctx):
     for f in (v_cust_dob_fmt, v_hit_dob_fmt, v_country_syn, v_extra_fields, v_legal_form, v_deceased_phrase, v_case, v_drop_optional):
         f(t, rnd, ctx)
