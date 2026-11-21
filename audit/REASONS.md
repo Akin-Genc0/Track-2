@@ -1,6 +1,6 @@
 # Reason-quality audit
 
-Baseline: bot/core-system, 819 rebuilt predictions. All 50 practice labels plus 10 deterministic supplements (first missing code, then earliest remaining hits in output order): 60 total, all three decisions and all 11 codes. References are guidance, not proof that every extra citation is wrong. No unseen accuracy claims.
+Baseline: origin/bot/core-system at a22cbf5, 819 rebuilt predictions. Rebased and rechecked on 2026-11-21. All 50 practice labels plus 10 deterministic supplements (first missing code, then earliest remaining hits in output order): 60 total, all three decisions and all 11 codes. References are guidance, not proof that every extra citation is wrong. No unseen accuracy claims.
 
 ## Findings
 
@@ -11,7 +11,13 @@ All 50 decisions, codes and customer IDs pass the local scorer; evidence sets ma
 * Ambiguity: H-2B5507 names three people and cites their evidence but prints only the first person's DOB. Each candidate needs its own deciding comparison. H-0F3C96 provides candidate codes but no factual basis for their different outcomes. Rendering cannot repair incorrect resolution.
 * One-sentence explanations violate the requested two-to-four sentences: H-AC1114 and H-BD709E are concrete examples. Add identification/context, not unsupported claims.
 * Generic review: H-8A1D28 says DOB cannot be compared without saying which side is missing. Supply customer DOB and hit DOB availability separately, including conflicting sources where relevant. Do not say nothing contradicts when contradictory records caused review.
-* Code risk (source inspection): when names and DOBs agree but known country sets are disjoint, decide.py suppresses LOCATION_MISMATCH then returns SAME_ENTITY/NAME_DOB_MATCH. Policy principle 6 explicitly requires REVIEW. This requires a decision-engine fix, not prettier text. No practice code mismatch was observed. NAME_MISMATCH_VERIFIED must compare all aliases; its current prose names only the primary name. Temporal reasons must distinguish not-yet-born from age zero and retain partial-date uncertainty.
+* Resolved upstream in a22cbf5: agreeing names/DOBs with disjoint known country sets now returns REVIEW/INSUFFICIENT_DATA. The new reason names both country sets and the agreeing DOB, and the synthetic policy case passes. The earlier SAME_ENTITY finding is closed. No practice code mismatch was observed. Name-match provenance remains a risk in this new review branch because it still omits nsrc.
+* Still open: NAME_MISMATCH_VERIFIED prose names only the primary hit name despite comparing aliases. Temporal prose still clamps negative ages to zero rather than stating not-yet-born. Other citation and ambiguity findings above remain present in the rebased code.
+
+## Rebase validation
+
+The regenerated output exactly matches the output committed upstream. All 23 synthetic policy tests pass. Practice checks remain 50/50 for decisions, codes and customer IDs with evidence Jaccard 1.00; 45/50 reference texts are identical. Predictions were refreshed; supplementary H-A9AA55 was replaced by H-DFB2B9 to retain NAME_DOB_MATCH coverage (60 rows total). Changed sampled rows: H-23805C. All 11 reason codes remain covered. No edits to decide.py or hitfacts.py were made; the renderer remains unintegrated.
+
 
 ## Before / after
 
@@ -447,11 +453,11 @@ Customer: `CUS-559377`. Evidence: CUS-559377, KYC-30794E.
 
 The customer is a company but the hit is an individual. The customer is linked only to Germany but the hit is linked only to Singapore.
 
-### H-23805C — SAME_ENTITY / NAME_DOB_MATCH
+### H-23805C — REVIEW / INSUFFICIENT_DATA
 
-Customer: `CUS-898557`. Evidence: NOTE-4A8FF2.
+Customer: `CUS-898557`. Evidence: NOTE-4A8FF2, CUS-898557.
 
-The customer's date of birth 1994-08-24 (NOTE-4A8FF2) agrees with the hit's 1994, 1993. The customer's name agrees with the hit's name Usman, Muhammad.
+The customer's date of birth 1994-08-24 (NOTE-4A8FF2) agrees with the hit's 1994, 1993. The customer's name agrees with the hit's name Usman, Muhammad. However the customer is linked only to Nigeria while the hit is linked only to Pakistan; a country difference cannot clear a hit whose name and date of birth agree, so a person must review it.
 
 ### H-2B5507 — DIFFERENT_ENTITY / DOB_MISMATCH
 
@@ -483,9 +489,9 @@ Customer: `CUS-623529`. Evidence: NOTE-C1E05D.
 
 Both the customer and the hit are linked to Nigeria. The customer's name agrees with the hit's name Oluwaseun, Emmanuel. Nothing in the customer's records contradicts the hit, and the date of birth cannot be compared with it, so the hit can be neither cleared nor confirmed.
 
-### H-A9AA55 — SAME_ENTITY / NAME_DOB_LOCATION_MATCH
+### H-DFB2B9 — SAME_ENTITY / NAME_DOB_MATCH
 
-Customer: `CUS-558035`. Evidence: KYC-685B2C, SR-AE2CE1, CUS-529109, CUS-558035.
+Customer: `CUS-361833`. Evidence: NOTE-03FC88.
 
-The customer's date of birth 1959-09-12 (KYC-685B2C) agrees with the hit's 1959 or 1960. Both the customer and the hit are linked to Italy. The customer's name agrees with the hit's name Giampiero Fiorani.
+The customer's date of birth 1988-04-28 (NOTE-03FC88) agrees with the hit's 1988, 1987. The customer's name agrees with the hit's name Singh, Harwinder.
 
