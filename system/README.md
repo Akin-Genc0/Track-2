@@ -7,6 +7,22 @@ One JSON line per watchlist hit: a decision, policy reason code, resolved custom
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    A["alerts.jsonl + hits.jsonl<br/>one work item per hit"] --> R["resolve.py<br/>which customer was screened?<br/>account / login / email link, else name + DOB + country + city"]
+    R -->|"no record"| U["REVIEW, customer null"]
+    R -->|"one or more candidates"| P["profile.py<br/>verified customer facts<br/>approved KYC beats declared; each fact keeps its record IDs"]
+    P --> H["hitfacts.py<br/>listed-person facts<br/>names, aliases, type, DOB or dated ages, countries, death date"]
+    H --> D["decide.py (POLICY.md)<br/>contradiction: DIFFERENT_ENTITY<br/>agreement, no contradiction: SAME_ENTITY<br/>otherwise or candidates disagree: REVIEW"]
+    D --> E["explain.py<br/>2-4 sentence reason + deciding evidence IDs"]
+    U --> O
+    E --> O["output line<br/>hit_id, alert_id, decision, reason_code,<br/>customer_record_id, reason, evidence"]
+```
+
+**Model and prompts: none.** Every decision comes from deterministic Python rules; there is no LLM, no prompt, no API key and no network call.
+
+**Time and cost:** about 16 s for all 819 dev hits on one laptop core, $0 per run (no model calls), well under the 30-minute limit.
+
 | Analyst question | How the resolver answers it |
 |---|---|
 | Which customer was screened? (`resolve.py`) | Follow the account, login or email link first. Screened details distinguish joint holders. Without a link, compare name, DOB, country and city. Group records only on phone **and** full DOB, or a shared document number on approved checks. Keep distinct plausible people separate. |
@@ -25,10 +41,10 @@ Each customer fact is stored with the set of record IDs it came from. For exampl
 - **Deceased clears:** the screened customer record (the death date is the hit's own fact).
 - **Confirms and reviews:** the sources of the agreeing facts (the DOB source and the sources of the shared countries).
 
-When several contradictions apply, the evidence is the union and the reason lists up to three of them. Reasons are generated from templates filled with this hit's own values: dates, countries, names and record IDs. `explain.py` renders every reason and enforces the brief's two to four sentences: the deciding facts first, then, if only one deciding fact applies, a sentence on what else was compared or is missing (name, date of birth, countries). For example, "The customer is linked only to Singapore, United States but the hit is linked only to Pakistan. Apart from this, the customer's name agrees with the hit's name Abdul Rahman and the hit gives no date of birth to compare; the country difference is enough to clear the hit under the policy."
+When several contradictions apply, the evidence is the union and the reason lists up to three of them. Reasons are generated from templates filled with this hit's own values: dates, countries, names and record IDs. `explain.py` renders every reason and enforces the brief's two to four sentences: the deciding facts first, then, if only one deciding fact applies, a sentence on what else was compared or is missing (name, date of birth, countries). For example, H-9FD80D: "The customer is linked only to Germany but the hit is linked only to Switzerland. The country difference alone clears the hit under the policy, because the name and date of birth do not both agree: the customer's name agrees with the hit's name Markus A. Müller-Kägi and the hit gives no date of birth to compare."
 
 ## Determinism
-There is no randomness, no model, no network and no clock. Every input is sorted by ID before iteration. Union-find roots are the smallest record ID. Ties between checks on the same date break on check ID. `run` sets `PYTHONHASHSEED=0`, and runs with other seeds give byte-identical output (checked). Any unexpected exception on a hit falls back to `REVIEW` instead of crashing, so a run always writes one line per hit.
+There is no randomness, no model, no network and no clock. Every input is sorted by ID before iteration. Union-find roots are the smallest record ID. Ties between checks on the same date break on check ID. `run` sets `PYTHONHASHSEED=0`, and runs with other seeds give byte-identical output (checked). A fresh-clone check of 5 runs with `PYTHONHASHSEED` 1 to 5 gave byte-identical output that matches `output/dev.jsonl` (verified 14:47 on f91f316). Any unexpected exception on a hit falls back to `REVIEW` instead of crashing, so a run always writes one line per hit.
 
 ## Results on the development set
 - 50 practice labels: 50/50 decisions correct, 0 unsafe clearances, local decision score 1.000. Reason code fits 50/50, customer record right 50/50, evidence identical to the reference on all 50.
