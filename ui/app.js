@@ -32,7 +32,6 @@
     NAME_DOB_MATCH: { name: "agree", dob: "agree" },
     NAME_LOCATION_MATCH: { name: "agree", countries: "agree" },
     DOB_MISMATCH: { dob: "conflict" },
-    TEMPORAL_IMPOSSIBILITY: { dob: "conflict" },
     LOCATION_MISMATCH: { countries: "conflict" },
     NAME_MISMATCH_VERIFIED: { name: "conflict" },
   };
@@ -1061,7 +1060,13 @@
     }
     const rows = compareRows(cust, hit, kyc, alert, bundle, noteIdsForCompare);
     const asserted = CODE_FACTS[reasonCode] || {};
-    for (const r of rows) if (asserted[r.key]) r.status = asserted[r.key];
+    for (const r of rows) {
+      const want = asserted[r.key];
+      if (!want) continue;
+      // A contradiction needs a value on both sides; otherwise the fact stays unknown.
+      if (want === "conflict" && r.brief && !(r.brief[0] && r.brief[1])) continue;
+      r.status = want;
+    }
     rows.sort((a, b) => ROW_ORDER.indexOf(a.key) - ROW_ORDER.indexOf(b.key));
     const byKey = Object.fromEntries(rows.map((r) => [r.key, r]));
 
@@ -1423,6 +1428,9 @@
 
   async function main() {
     bind();
+    // Read the deep link before the first render can rewrite the hash.
+    const fromHash = (location.hash || "").replace(/^#/, "");
+    if (fromHash) state.selectedId = fromHash;
     window.addEventListener("hashchange", () => {
       const id = (location.hash || "").replace(/^#/, "");
       if (id && state.bundle && state.bundle.hits[id] && id !== state.selectedId) {
@@ -1439,7 +1447,6 @@
     }
     $("boot").classList.add("done");
     // Default to labeled queue in sample mode so the desk is populated with decisions.
-    const fromHash = (location.hash || "").replace(/^#/, "");
     if (fromHash && state.bundle && state.bundle.hits[fromHash]) {
       state.selectedId = fromHash;
     }
