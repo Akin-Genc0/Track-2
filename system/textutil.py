@@ -8,12 +8,23 @@ for _k, _v in list(MONTHS.items()):
 MONTHS["sept"] = 9
 _MON = r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?"
 
+PIVOT = 26   # two-digit years: 00-26 -> 2000s, 27-99 -> 1900s (fixed, so runs do not depend on the clock)
+
+
+def _yy(v):
+    v = int(v)
+    return 2000 + v if v <= PIVOT else 1900 + v
+
+
 # date patterns, most specific first; each returns (y, m, d)
 _DATE_PATTERNS = [
     (re.compile(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b"), lambda g: (g[0], g[1], g[2])),
     (re.compile(r"\b(\d{4})/(\d{1,2})/(\d{1,2})\b"), lambda g: (g[0], g[1], g[2])),
     (re.compile(r"\b(\d{1,2})[/.](\d{1,2})[/.](\d{4})\b"), lambda g: (g[2], g[1], g[0])),  # day-first
-    (re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?(?: of)? (" + _MON + r"),? (\d{4})\b", re.I), lambda g: (g[2], g[1], g[0])),
+    (re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?(?: of)?[- ](" + _MON + r")[-, ]+(\d{4})\b", re.I), lambda g: (g[2], g[1], g[0])),
+    (re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?[-/ ](" + _MON + r")[-/ ,]+(\d{2})\b(?![\d:])", re.I), lambda g: (_yy(g[2]), g[1], g[0])),
+    (re.compile(r"\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{2})\b(?![\d/:-]|\.\d)"), lambda g: (_yy(g[2]), g[1], g[0])),
+    (re.compile(r"\b(\d{4})\.(\d{1,2})\.(\d{1,2})\b"), lambda g: (g[0], g[1], g[2])),
     (re.compile(r"\b(" + _MON + r") (\d{1,2})(?:st|nd|rd|th)?,? (\d{4})\b", re.I), lambda g: (g[2], g[0], g[1])),
     (re.compile(r"\b(" + _MON + r"),? (\d{4})\b", re.I), lambda g: (g[1], g[0], None)),
     (re.compile(r"\b(\d{4})-(\d{1,2})\b(?!-)"), lambda g: (g[0], g[1], None)),
@@ -113,8 +124,11 @@ def name_parts(name, legal_forms=None):
     for p in s.split():
         if len(p) < 2:
             continue                      # initials are not parts
-        if any(ch.isdigit() for ch in p):
-            continue                      # digits are placeholders
+        m_login = re.fullmatch(r"([a-z]{2,})\d{3,}", p)
+        if m_login:
+            p = m_login.group(1)          # login-style handle: letters + digit suffix -> letters only
+        if not any(ch.isalpha() for ch in p):
+            continue                      # digit-only tokens (0000, 123) are placeholders; alphanumerics like N26 are kept
         if p in PLACEHOLDERS or re.fullmatch(r"x+", p):
             continue
         if legal_forms and p in legal_forms:

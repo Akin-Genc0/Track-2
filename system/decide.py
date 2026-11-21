@@ -62,7 +62,8 @@ class Decider:
             if comp or len(cp) >= 2:
                 usable = True
             for hn, hp in hit_parts:
-                if (comp or len(cp) >= 2 or len(hp) == 1) and self.m.agree_parts(cp, hp):
+                # an individual whose name has fewer than two real parts can be neither confirmed nor cleared on name
+                if (comp or len(cp) >= 2) and self.m.agree_parts(cp, hp):
                     return True, True, hn, cname, [src]
         return False, usable, None, None, []
 
@@ -127,7 +128,7 @@ class Decider:
         if prof.verified_name:
             vname, vsrc = prof.verified_name
             vparts = self.m.parts(vname, prof.company)
-            if (prof.company or len(vparts) >= 2) and not n_agree:
+            if (prof.company or len(vparts) >= 2) and not n_agree and not getattr(prof, "verified_name_weak", False):
                 contra["NAME_MISMATCH_VERIFIED"] = (
                     f"The customer's verified name is {vname} ({vsrc}), which does not match the hit's name {hit.name}.", [vsrc])
         # location
@@ -151,6 +152,16 @@ class Decider:
         loc_src = sorted({s for c in shared for s in prof.countries[c]})
         loc_txt = f"Both the customer and the hit are linked to {', '.join(shared)}." if shared else ""
         name_txt = f"The customer's name agrees with the hit's name {hn}." if n_agree else ""
+        loc_conflict = bool(cust_c and hit_c and not shared)
+        if loc_conflict and n_agree and dob_agree:
+            ev = []
+            for e in dob_agree_src + sorted({s for c in cust_c for s in prof.countries[c]}):
+                if e not in ev:
+                    ev.append(e)
+            return {"decision": "REVIEW", "reason_code": "INSUFFICIENT_DATA", "evidence": ev,
+                    "reason": sentence_join([dob_agree_txt, name_txt,
+                                             f"However the customer is linked only to {', '.join(sorted(cust_c))} while the hit is linked only to {', '.join(sorted(hit_c))}; "
+                                             "a country difference cannot clear a hit whose name and date of birth agree, so a person must review it."])}
         if not prof.company and n_agree and dob_agree:
             ev = []
             for e in dob_agree_src + loc_src:

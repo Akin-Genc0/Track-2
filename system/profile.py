@@ -19,6 +19,15 @@ _TITLE_STOP = {"sumsub", "onfido", "veriff", "persona", "jumio", "trulioo", "exp
                "driving", "licence", "license", "document", "date", "birth", "born", "check", "checked", "verified", "approved",
                "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november",
                "december", "mr", "mrs", "ms", "miss", "dr", "onboarding", "team", "companies", "registry", "lookup", "extract"}
+_MONTH_WORD = re.compile(r"(?i)(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?")
+_ENGLISH_STOP = set("""a an and are as at be been by can completed confirmed confirms cleared did document documents done for from has have
+held her his holder identity in into is issued it its id of on or our per performed presented processed provided record records
+showing shows successful successfully that the their them they this to under used using utilizing utilising valid validated
+validation verified verification vetted via was were which with who whose approved approval passed pass check checked checks screening
+screened authenticated authentication established accepted indicating indicates indicated lists listed matches matched matching
+birth born date dob licence license driving passport national card permit residence registry extract lookup individual customer
+client applicant user account holder team onboarding analyst note added reviewed case queue ref reference no further action informed
+email file agent result results provider basis travel""".split())
 _CAPS_STOP = {"DOB", "ID", "KYC", "UK", "US", "USA", "EU", "UAE", "AML", "PEP", "SOP", "D.O.B", "N.A", "GB", "OK", "CDD", "EDD", "API", "PDF", "SA", "ISO"}
 
 
@@ -47,7 +56,7 @@ def parse_id_note(note):
             if len(cur) > len(best):
                 best = cur
             cur = []
-        if tok != m.group(0).rstrip() and m.group(0).rstrip()[-1:] in ",;:)" and cur:
+        if tok != m.group(0).rstrip() and m.group(0).rstrip()[-1:] in ";:)" and cur:
             if len(cur) > len(best):
                 best = cur
             cur = []
@@ -57,20 +66,24 @@ def parse_id_note(note):
     if best and any(re.search(r"[A-Za-z]{2,}", x[2]) for x in best):
         name = " ".join(x[2] for x in best)
         name_span = (best[0][0], best[-1][1])
-    # fallback candidates when the name is not upper-case: runs of Capitalised words (filtered later against records)
+    # fallback candidates when the name is not upper-case: runs of consecutive name-like words (no stop words,
+    # countries, months or digits). The profile keeps only a run that shares a part with the person's own records.
     title_runs = []
     if not name:
         cur2 = []
         for m in re.finditer(r"[^\s,;:()]+", t):
-            tok = re.sub(r"['’]s$", "", m.group(0).strip(".\""))
-            if re.fullmatch(r"[A-ZÀ-Þ][\wÀ-ÿ'’-]*", tok) and fold(tok) not in _TITLE_STOP and not countries_in_text(tok):
+            raw = m.group(0)
+            tok = re.sub(r"['’]s$", "", raw.strip(".\""))
+            ok = re.fullmatch(r"[^\W\d_][\w'’-]*", tok) and fold(tok) not in _TITLE_STOP and fold(tok) not in _ENGLISH_STOP \
+                and not countries_in_text(tok) and not _MONTH_WORD.fullmatch(tok)
+            if ok:
                 cur2.append(tok)
-            else:
+            if not ok or raw[-1:] in ",;:)" or raw.endswith("."):
                 if len(cur2) >= 2:
-                    title_runs.append(" ".join(cur2))
+                    title_runs.append(" ".join(cur2[:5]))
                 cur2 = []
         if len(cur2) >= 2:
-            title_runs.append(" ".join(cur2))
+            title_runs.append(" ".join(cur2[:5]))
     # DOB: a date that is not the check date, closest to a birth keyword
     cand = []
     for s, e, d in dates:
@@ -175,8 +188,11 @@ class Profile:
                     cand = dict(c, name=run)
                     if plausible(cand) and len(idx.m.parts(run, self.company)) >= 2:
                         c["name"] = run
+                        # read without capitalisation cues (lower-case run): never used to clear on name
+                        c["weak_name"] = not all(w[:1].isupper() for w in run.split())
                         break
         self.verified_name = next(((c["name"], c["id"]) for c in approved if c["name"] and plausible(c)), None)
+        self.verified_name_weak = bool(next((c.get("weak_name") for c in approved if c["name"] and plausible(c)), False))
         self.verified_dob = next(((c["dob"], c["id"]) for c in approved if c["dob"]), None)
 
     def best_country_sources(self, c):
