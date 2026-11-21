@@ -7,6 +7,8 @@ One JSON line per watchlist hit: a decision, policy reason code, resolved custom
 
 ## Architecture
 
+![Clearsight pipeline: resolve, verified facts, listed-person facts, decide, one cited line per hit](../deck/assets/architecture.svg)
+
 ```mermaid
 flowchart TD
     A["alerts.jsonl + hits.jsonl<br/>one work item per hit"] --> R["resolve.py<br/>which customer was screened?<br/>account / login / email link, else name + DOB + country + city"]
