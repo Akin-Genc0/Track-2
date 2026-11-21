@@ -16,4 +16,5 @@ jobs:
       - run: python3 tests/test_loader.py
       - run: python3 tests/test_runner_boundary.py
       - run: python3 tests/test_real_format.py
+      - run: python3 tests/test_packaging.py
       - run: python -m py_compile system/*.py

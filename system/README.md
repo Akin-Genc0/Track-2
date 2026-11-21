@@ -3,7 +3,7 @@
 ```
 system/run <data folder> <output file>       # e.g.  system/run dev output/dev.jsonl
 ```
-One JSON line per watchlist hit: a decision, policy reason code, resolved customer ID, explanation and evidence IDs. The resolver uses Python's standard library; there is no model, prompt, API key or network dependency. The 819-hit dev run takes about six seconds on one core with no API cost.
+One JSON line per watchlist hit: a decision, policy reason code, resolved customer ID, explanation and evidence IDs. The resolver uses Python's standard library; there is no model, prompt, API key or network dependency. The 819-hit dev run takes about 15 seconds on one laptop core (Apple Silicon, Python 3.11) with no API cost.
 
 ## Architecture
 
@@ -33,11 +33,11 @@ There is no randomness, no model, no network and no clock. Every input is sorted
 ## Results on the development set
 - 50 practice labels: 50/50 decisions correct, 0 unsafe clearances, local decision score 1.000. Reason code fits 50/50, customer record right 50/50, evidence identical to the reference on all 50.
 - All 819 dev hits: 464 DIFFERENT_ENTITY (56.7%), 125 SAME_ENTITY (15.3%), 230 REVIEW (28.1% review rate); see `audit/CROSSCHECK_JOHN.md` for the cross-check that moved one clear to REVIEW. The same run with any `PYTHONHASHSEED` gives byte-identical output.
-- Final integrated tree (after merging the loader hardening and repo polish): `tools/check_submission.py` passes on `output/dev.jsonl` (every row valid, every reason 2–4 sentences, every conclusive decision cites evidence); `tests/test_policy.py` 23/23, `tests/test_ages.py` 21/21, `tests/test_loader.py` and `tests/test_runner_boundary.py` pass; `redteam/run_all.py --strict` fails only the 2 F12 team-call cases; shadow seeds 7 and 21 score 0.965 with 0 unsafe; `tools/unseen_sim.py` shows 0 crashes, 0 missing rows and 0 moves to clear across 7 schema mutations; no `tools/perturb.py` rewrite moves a decision towards DIFFERENT_ENTITY.
+- Final integrated tree (after merging the loader hardening and repo polish): `tools/check_submission.py` passes on `output/dev.jsonl` (every row valid, every reason 2–4 sentences, every conclusive decision cites evidence); `tests/test_policy.py` 24/24, `tests/test_ages.py` 21/21, `tests/test_loader.py` and `tests/test_runner_boundary.py` pass; `redteam/run_all.py --strict` fails only the 2 F12 team-call cases; shadow seeds 7 and 21 score 0.965 with 0 unsafe; `tools/unseen_sim.py` shows 0 crashes, 0 missing rows and 0 moves to clear across 7 schema mutations; no `tools/perturb.py` rewrite moves a decision towards DIFFERENT_ENTITY.
 - [Spot check of 20 clears and 10 reviews](../REVIEW_NOTES.md): three clears warrant checking the link between the screened holder and the approved identity check. The practice score does not measure this risk across the unlabelled set.
 
 ## Hardening for the unseen set
-**Policy coverage.** `tests/test_policy.py` has 23 synthetic data rooms, one per rare situation, and all pass:
+**Policy coverage.** `tests/test_policy.py` has 24 synthetic data rooms, one per rare situation, and all pass:
 - name + DOB agree but the countries differ → REVIEW, not SAME (the policy says so explicitly);
 - date of death after screening (no clear) and before it (DECEASED);
 - company incorporated after the earliest dated report;
@@ -116,7 +116,7 @@ could cost practice points, so they are unchanged.
 **Effect on dev:** none. Decisions, codes, customers and evidence in `output/dev.jsonl` are identical before and after all of
 these fixes (the file was byte-identical until the reason wording below): the 819 dev hits never hit these patterns, so the
 fixes protect the unseen set at no dev cost. Practice is still 50/50, 0 unsafe, codes, customers and
-evidence 50/50; the 23 policy tests pass; no perturbation moves any decision towards DIFFERENT_ENTITY.
+evidence 50/50; the 24 policy tests pass; no perturbation moves any decision towards DIFFERENT_ENTITY.
 
 **Shadow test set (formats dev never shows).** `tools/shadow.py gen <dir> <seed>` builds a 559-hit policy-labelled data room
 from a separate generator (findings in `redteam/SHADOW_FINDINGS.md`); `tools/shadow.py score <dir> <predictions>` scores it.
@@ -168,14 +168,15 @@ on the customer's own applicant, like Akin's three). Turned on, it moves 60 dev 
   - Company names that differ only by a legal form, such as "STILE ITALIANO S.R.L. GmbH" (Austria) against "STILE ITALIANO S.R.L." (Italy), are cleared on location.
 
 ## Tests and tools
-- `python3 tests/test_policy.py`: 23 synthetic rare-situation policy tests.
+- `python3 tests/test_policy.py`: 24 synthetic rare-situation policy tests.
 - `python3 tools/perturb.py <data folder> [variant…]`: the rewording test above.
 - `python3 redteam/run_all.py --strict`: 48 adversarial synthetic cases (2 open, both F12).
 - `python3 tests/test_ages.py`: age-cue probes (real ages read, counts and money not).
 - `python3 tests/test_loader.py`, `python3 tests/test_runner_boundary.py`, `python3 tests/test_real_format.py`: loader tolerance, official-format fixtures, and per-hit fail-safes.
+- `python3 tests/test_packaging.py`: `system/run` is executable and runs from any directory with spaces in paths; no data, workbook, `.env` or API key is tracked.
 - `python3 tools/check_submission.py output/dev.jsonl dev`: submission format, provenance and 2–4 sentence check.
 - `python3 tools/unseen_sim.py dev`: schema mutations (renamed, stringified, nested, missing, corrupt…); no crash, no move to clear.
-- `python3 tools/shadow.py gen <dir> 7 && system/run <dir> <out> && python3 tools/shadow.py score <dir> <out>`: shadow test set.
+- `TRACK2_DEV=<dev folder> python3 tools/shadow.py gen <dir> 7 && system/run <dir> <out> && python3 tools/shadow.py score <dir> <out>`: shadow test set.
 - `python3 tools/ablate.py dev`: which dev and practice decisions depend on each component.
 - `python3 tools/score.py output/dev.jsonl <data folder>/practice_labels.jsonl -v`: local cost score and reason checks.
 
