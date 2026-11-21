@@ -172,7 +172,7 @@ could cost practice points, so they are unchanged.
 **Effect on dev:** none. Decisions, codes, customers and evidence in `output/dev.jsonl` are identical before and after all of
 these fixes (the file was byte-identical until the reason wording below): the 819 dev hits never hit these patterns, so the
 fixes protect the unseen set at no dev cost. Practice is still 50/50, 0 unsafe, codes, customers and
-evidence 50/50; the 27 policy tests pass; no perturbation moves any decision towards DIFFERENT_ENTITY.
+evidence 50/50; the 41 policy tests pass; no perturbation moves any decision towards DIFFERENT_ENTITY.
 
 **Shadow test set (formats dev never shows).** `tools/shadow.py gen <dir> <seed>` builds a 559-hit policy-labelled data room
 from a separate generator (findings in `redteam/SHADOW_FINDINGS.md`); `tools/shadow.py score <dir> <predictions>` scores it.

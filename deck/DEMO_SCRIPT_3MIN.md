@@ -114,10 +114,10 @@ If you're running long, cut the Abdul Rahman segment (1:10–1:30). Never cut H-
 | Runtime | about 16 s for 819 hits on a laptop (15.9 s wall clock) | `time system/run dev /tmp/a.jsonl` |
 | Rewordings | 16 single rewordings with 0 flips toward clearing; "all" combined: 4/819 flips, all to REVIEW | `python3 tools/perturb.py dev` |
 | Shadow set | 559 synthetic hits (seed 7): 547 correct (97.9%), 0 unsafe, score 0.965; all 12 errors are DIFFERENT→REVIEW | `tools/shadow.py gen <dir> 7`, `system/run <dir> p.jsonl`, `tools/shadow.py score <dir> p.jsonl` |
-| Tests | 73 checks: 27 policy, 21 age parser, 7 name matcher, 18 unit | `make test` |
+| Tests | 102 checks: 41 policy, 21 age parser, 22 name matcher, 18 unit | `make test` |
 | H-4D76E3 | SAME / NAME_DOB_LOCATION_MATCH, CUS-970916, evidence NOTE-4E8A14, CUS-906311, CUS-970916 | `grep H-4D76E3 output/dev.jsonl` |
 | H-C864DC | DIFFERENT / DOB_MISMATCH, CUS-553603, evidence KYC-68E6D6 | `grep H-C864DC output/dev.jsonl` |
 | H-13E1CF | DIFFERENT / TEMPORAL_IMPOSSIBILITY, CUS-364225, practice-labelled and correct | `grep H-13E1CF output/dev.jsonl` |
 | H-009799 | REVIEW / AMBIGUOUS_CUSTOMER_RECORD (CUS-018587 REVIEW, CUS-489904 DIFFERENT); fixed in 60f640f | `grep H-009799 output/dev.jsonl`; `audit/CROSSCHECK_JOHN.md` |
 
-**Deck numbers checked against main's `output/dev.jsonl`:** 464 / 125 / 230; 217 clears coded on location and 125 on a verified name; 27 policy tests (73 automated checks); 16 single rewordings plus 2 combined runs; about 16 s per run. The older figures ("~6 s", "465 / 229", "56.8%", "23" or "24 policy tests", "17 rewordings", "216 / 126") are all corrected in `deck/index.html` and `deck/PITCH.md`.
+**Deck numbers checked against main's `output/dev.jsonl`:** 464 / 125 / 230; 217 clears rest on location alone and 79 on a verified name alone; 41 policy tests (102 automated checks); 16 single rewordings plus 2 combined runs; about 16 s per run. The older figures ("~6 s", "465 / 229", "56.8%", "23" or "24 policy tests", "17 rewordings", "216 / 126") are all corrected in `deck/index.html` and `deck/PITCH.md`.

@@ -11,7 +11,7 @@ Fifty labels is a sanity check, not proof, and we say so. We wrote the rules fro
 The scoring punishes one wrong clear 20 to 30 times harder than anything else, and the hidden set runs five times. A model that's right 99% of the time but varies between runs is a liability there. Our output is byte-identical across runs, takes about 16 seconds for 819 hits, and every reason is built from record IDs we can point to. Free text is read with patterns. When a pattern fails, we lose a fact, and a lost fact can only lead to review.
 
 **3. Where can you still unsafely clear?**
-Single-ground clears are the risk: 217 dev clears are coded on location and 125 on a verified name. They follow the policy literally, but some look risky in practice, like a bank branch listed in another country or two names sharing a single part. We list them in the README rather than hide them. In production, they're the first thing we'd route to sampled QA in Fathom.
+Single-ground clears are the risk: 217 dev clears rest on location alone and 79 on a verified name alone. They follow the policy literally, but some look risky in practice, like a bank branch listed in another country or two names sharing a single part. We list them in the README rather than hide them. In production, they're the first thing we'd route to sampled QA in Fathom.
 
 **4. Your review rate is 28%. Isn't that just pushing the work back onto analysts?**
 Review is the cheap error: 2 or 3 points against 60. We still clear 464 of 819 hits (57%) and confirm 125 more, so analysts see 230 instead of 819, which cuts the queue by 72%. Most of the 230 are genuinely missing a fact, usually a date of birth on one side. Even the shadow-set misses all went to review.
@@ -48,5 +48,5 @@ The design fits how compliance gets audited: every decision is a reason code, tw
 - Official `validate.py` on practice: 50/50, 0 unsafe, decision score 100.0; code and customer 100%; evidence Jaccard 1.00 (local scorer). Practice cost 0 against an all-review baseline of 108.
 - Shadow (559 synthetic hits): 97.9% right, 0 unsafe, score 0.965.
 - Rewordings: 16 single rewordings, 0 flips toward clearing; all combined, 4 of 819 change, all to REVIEW.
-- 73 automated checks (27 policy, 21 age parser, 7 name matcher, 18 unit). About 16 s per full run, byte-identical every time.
+- 102 automated checks (41 policy, 21 age parser, 22 name matcher, 18 unit). About 16 s per full run, byte-identical every time.
 - Scoring: an unsafe clear costs 60, any other error 2 or 3. The hidden set is ~550 hits run 5×.

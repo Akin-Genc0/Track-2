@@ -66,6 +66,10 @@ On the full dev set the system takes 589 of 819 hits (72%) off the analyst queue
 > - **Single-signal clears.** Counted from the reason codes in `output/dev.jsonl`: **217 of the 464 clears rest on location alone** (`LOCATION_MISMATCH` is the lowest-priority ground, so it is the code only when no other contradiction exists), and **79 rest on a verified name alone** (`NAME_MISMATCH_VERIFIED` with no country contradiction). Both follow the policy literally; some, such as bank branches abroad or names sharing a single part, deserve sampled QA. Examples are listed in [system/README.md](system/README.md#honest-limitations).
 > - **Q: Why is `DOUBTFUL_LINK_REVIEW` off?** A: Policy principle 4 says verified beats declared: the approved check’s legal name outranks the record name, so a verified name that disagrees with the hit clears it. The practice labels read the policy the same way. A bank that wants to be stricter can flip one line in `decide.py`; that moves about 60 dev clears to review and adds no clears (practice then 46/50, score 0.889, measured above).
 
+## Architecture
+
+![Clearsight architecture](deck/assets/architecture.svg)
+
 ## 30-second quickstart
 
 Needs Python 3.11 or newer; nothing to install. Tested on Python 3.11 and 3.13.5.

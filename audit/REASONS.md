@@ -1,3 +1,5 @@
+> **Historical audit note.** Counts below are from an earlier commit; current figures are in the root README and `make test` (41 policy tests, 102 checks).
+
 # Reason-quality audit
 
 > **Current status (re-checked on the final tree, decisions, codes, customers and evidence identical to main c7fd5d3).** Everything below this box is the
