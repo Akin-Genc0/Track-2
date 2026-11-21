@@ -1,0 +1,4 @@
+#!/bin/sh
+# Usage: system/run <data folder> <output file>
+export PYTHONHASHSEED=0
+exec python3 "$(dirname "$0")/screen.py" "$@"

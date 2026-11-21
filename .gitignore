@@ -1,0 +1,8 @@
+dev/
+data/
+xlsx_raw/
+track1_zip_unrelated/
+*.xlsx
+*.zip
+.env
+__pycache__/
