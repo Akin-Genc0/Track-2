@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_TRACK2 = Path("/workspace/track2")
+DEFAULT_TRACK2 = HERE.parent if (HERE.parent / "system").exists() else Path("/workspace/track2")
 OUT_DIR = HERE / "data"
 
 REASON_CODES = {
@@ -247,6 +247,88 @@ def score_predictions(preds: list[dict], labels_by_hit: dict) -> dict:
     }
 
 
+HIT_LISTS = ("aliases", "dobs", "place_of_birth", "nationality", "citizenship", "countries", "addresses",
+             "identifiers", "categories", "relationships", "sources", "source_urls")
+LABEL_LISTS = ("reason_codes", "customer_record_ids", "evidence")
+
+
+NAME_SKIP = ("login", "handle", "email", "user", "file", "list", "source", "entity")
+
+
+def fill_alert_names(alerts: list) -> int:
+    """Make sure every alert has customer_name, whatever the data room calls it
+    (screened_name, screened_customer.name, ...). Returns how many are still missing."""
+    def find(d, depth=0):
+        if not isinstance(d, dict) or depth > 2:
+            return ""
+        for k in ("customer_name", "screened_name", "name", "full_name", "customer_full_name"):
+            v = d.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        for k, v in d.items():
+            if isinstance(v, str) and v.strip() and "name" in k.lower() and not any(x in k.lower() for x in NAME_SKIP):
+                return v.strip()
+        for v in d.values():
+            got = find(v, depth + 1)
+            if got:
+                return got
+        return ""
+    missing = 0
+    for a in alerts:
+        if not (isinstance(a.get("customer_name"), str) and a["customer_name"].strip()):
+            a["customer_name"] = find(a)
+            missing += not a["customer_name"]
+    return missing
+
+
+def data_room_normalizer(track2: Path):
+    """Use the decision system's own loader (system/data.py) so the UI reads the official
+    data room exactly as the system does: unwrapped envelopes, field aliases
+    (e.g. alerts.name -> customer_name), dict `details` flattened, list fields as lists."""
+    for cand in (track2 / "system", Path(__file__).resolve().parent.parent / "system"):
+        if (cand / "data.py").exists():
+            sys.path.insert(0, str(cand))
+            break
+    try:
+        from data import normalize, as_list, as_text, load_name_variants  # type: ignore
+    except Exception as e:  # pragma: no cover - keep the old behaviour if the system is missing
+        print(f"warning: system/data.py not importable ({e}); reading files as-is", flush=True)
+        return None
+
+    def norm(rows, kind):
+        out = []
+        for r in rows:
+            r = normalize(r, kind)
+            if kind == "hits":
+                for k in HIT_LISTS:
+                    if k in r:
+                        r[k] = as_list(r[k])
+                if r.get("match_score") not in (None, ""):
+                    try:
+                        r["match_score"] = float(r["match_score"])
+                    except (TypeError, ValueError):
+                        pass
+            elif kind == "alerts":
+                r["hit_ids"] = as_list(r.get("hit_ids"))
+                for k in ("customer_name", "entity_type", "dob", "country", "city", "email", "login_handle"):
+                    if isinstance(r.get(k), (list, dict)):
+                        r[k] = as_text(r[k])
+            elif kind == "practice_labels":
+                for k in LABEL_LISTS:
+                    r[k] = as_list(r.get(k))
+                if isinstance(r.get("path"), (list, dict)):
+                    p = r["path"]
+                    r["path"] = "  →  ".join(as_text(x) for x in p) if isinstance(p, list) else as_text(p)
+            out.append(r)
+        return out
+
+    def variants(dev: Path):
+        groups, forms = load_name_variants(str(dev))
+        return {"given_names": groups, "company_legal_forms": forms}
+
+    return norm, variants
+
+
 def build(track2: Path, out_dir: Path, predictions_only: bool = False) -> Path:
     dev = track2 / "dev" if (track2 / "dev").exists() else track2 / "data" / "dev"
     output_path = track2 / "output" / "dev.jsonl"
@@ -281,6 +363,18 @@ def build(track2: Path, out_dir: Path, predictions_only: bool = False) -> Path:
     search_results = load_jsonl(dev / "search_results.jsonl")
     labels = load_jsonl(dev / "practice_labels.jsonl")
     name_variants = json.loads((dev / "name_variants.json").read_text(encoding="utf-8"))
+    normalizer = data_room_normalizer(track2)
+    if normalizer:
+        norm, variants = normalizer
+        hits, alerts, customers = norm(hits, "hits"), norm(alerts, "alerts"), norm(customers, "customers")
+        accounts, onboarding = norm(accounts, "accounts"), norm(onboarding, "onboarding")
+        kyc_checks, notes = norm(kyc_checks, "kyc_checks"), norm(notes, "notes")
+        search_results, labels = norm(search_results, "search_results"), norm(labels, "practice_labels")
+        name_variants = variants(dev)
+    if isinstance(alerts, list):
+        missing = fill_alert_names(alerts)
+        if missing:
+            print(f"warning: {missing} alert(s) have no customer name in the data room", flush=True)
     vidx = variant_index(name_variants)
 
     hits_by = {h["hit_id"]: h for h in hits}
