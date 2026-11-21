@@ -214,8 +214,10 @@ class HitFacts:
                     ys = years_from_age(as_text(sr.get("snippet")), weak=True)
                     born = None
                     for m in _BORN_RE.finditer(snip):
-                        ds = find_dates(snip[m.end():m.end() + 30])
-                        if ds:
+                        tail = snip[m.end():m.end() + 30]
+                        ds = find_dates(tail)
+                        # same rule as profile notes: the date must follow 'born' directly ('born in Kano; listed 2012' is not a birth year)
+                        if ds and ds[0][0] <= 3 or (ds and re.fullmatch(r"\s*(?:on|in)\s*", tail[:ds[0][0]])):
                             born = ds[0][2]
                     rid = as_text(sr.get("result_id"))
                     if born:
