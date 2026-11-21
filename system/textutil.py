@@ -82,6 +82,11 @@ def parse_date(s):
     return ds[0][2] if ds else None
 
 
+def placeholder_dob(d):
+    """Filler birth dates (1900-01-01, 1901-01-01, anything before 1901) carry no information."""
+    return bool(d) and (d[0] < 1901 or (d[0] == 1901 and d[1] in (None, 1) and d[2] in (None, 1)))
+
+
 def fmt_date(d):
     if not d:
         return "unknown"

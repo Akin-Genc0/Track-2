@@ -4,7 +4,7 @@ One person's facts from all their records: names, declared and verified DOB, ver
 Verified beats declared: the most recent APPROVED identity check (KYC provider or onboarding note) wins."""
 import re
 from data import as_text
-from textutil import parse_date, find_dates, fold, entity_kind
+from textutil import parse_date, find_dates, fold, entity_kind, placeholder_dob
 from countries import norm_country, countries_in_text, countries_in_value
 
 APPROVED = {"approved", "passed", "pass", "clear", "cleared", "verified", "success", "successful", "accepted"}
@@ -170,7 +170,7 @@ class Profile:
         self.declared_dobs = []
         for r in self.records:
             d = parse_date(C[r].get("dob"))
-            if d:
+            if d and not placeholder_dob(d):
                 self.declared_dobs.append((d, r))
         # countries with provenance
         self.countries = {}
@@ -192,7 +192,7 @@ class Profile:
         for r in self.records:
             for k in idx.kyc_checks_for(r):
                 checks.append({"id": as_text(k.get("check_id")), "name": strip_titles(as_text(k.get("verified_name"))) or None,
-                               "dob": parse_date(k.get("verified_dob")), "country": norm_country(k.get("document_country"), codes_any_case=True),
+                               "dob": None if placeholder_dob(parse_date(k.get("verified_dob"))) else parse_date(k.get("verified_dob")), "country": norm_country(k.get("document_country"), codes_any_case=True),
                                "date": parse_date(k.get("checked_at")),
                                "approved": as_text(k.get("result")).lower() in APPROVED, "source": "kyc"})
         self.residence_notes = []

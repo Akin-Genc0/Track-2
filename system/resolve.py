@@ -5,7 +5,7 @@ document number on approved KYC checks, transitively)."""
 import re
 from collections import defaultdict
 from data import as_text
-from textutil import parse_date, fold, entity_kind
+from textutil import parse_date, fold, entity_kind, placeholder_dob
 from countries import norm_country
 
 
@@ -14,9 +14,18 @@ def norm_phone(p):
     return d if len(d) >= 6 else ""
 
 
+_DOC_PLACEHOLDERS = re.compile(r"UNKNOWN|PENDING|NONE|NULL|NA|TBC|TBD|TEST|XXX|SAMPLE|DUMMY|NOTPROVIDED|REDACTED|MISSING")
+
+
 def norm_doc(n):
+    """A document number that can link records: 5+ characters, at least one digit, not one repeated character or
+    sequence, not a placeholder ('UNKNOWN', 'NONE00', '000000', '123456')."""
     d = re.sub(r"[^A-Z0-9]", "", as_text(n).upper())
-    return d if len(d) >= 4 else ""
+    if len(d) < 5 or not re.search(r"\d", d) or len(set(d)) == 1 or d in "01234567890" or d in "98765432109":
+        return ""
+    if _DOC_PLACEHOLDERS.match(d):
+        return ""
+    return d
 
 
 class UnionFind:
@@ -110,7 +119,7 @@ class CustomerIndex:
             c = C[rid]
             ph = norm_phone(c.get("phone"))
             d = parse_date(c.get("dob"))
-            if ph and d and d[1] and d[2]:
+            if ph and d and d[1] and d[2] and not placeholder_dob(d):
                 by_phone_dob[(ph, d)].append(rid)
         by_doc = defaultdict(set)
         for rid in sorted(C):
