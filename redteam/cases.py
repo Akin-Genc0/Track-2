@@ -67,7 +67,7 @@ def notes_enumerated_list_read_as_age_dev_H46F1CE():
             "and desist was issued against Robert James. Respondents violated § 409.3-301, RSMo Supp. 2004, when they offered "
             "a security without the security being (1)a federal-covered security, (2)exempt from registration under §§ "
             "409.2-201 or 409.2-202, or (3) registered under the Missouri Securities Act of 2003."))
-    return one(b), SAFE, "DIFFERENT_ENTITY", "An age at a date gives birth years (5); list numbering is not an age"
+    return one(b), SAFE, "REVIEW", "An age at a date gives birth years (5); list numbering is not an age"
 
 
 @case(2, "F2")
@@ -77,7 +77,7 @@ def notes_count_read_as_age():
         c = w.customer("Ivan Petrov", dob="1970-05-01", nationality="Russia", residence_country="RU")
         return w.hit(c, name="Petrov, Ivan", countries=["Russia"],
                      profile_notes="In March 2019, Ivan Petrov was 1 of 12 officials named in the indictment.")
-    return one(b), SAFE, "DIFFERENT_ENTITY", "An age at a date gives birth years (5); a count is not an age"
+    return one(b), SAFE, "REVIEW", "An age at a date gives birth years (5); a count is not an age"
 
 
 @case(2, "F2")
@@ -87,7 +87,7 @@ def notes_list_number_read_as_age():
         c = w.customer("Ivan Petrov", dob="1970-05-01", nationality="Russia", residence_country="RU")
         return w.hit(c, name="Petrov, Ivan", countries=["Russia"],
                      profile_notes="In 2015 Ivan Petrov was charged on counts 1, 3, and 7 of the indictment.")
-    return one(b), SAFE, "DIFFERENT_ENTITY", "An age at a date gives birth years (5); a count is not an age"
+    return one(b), SAFE, "REVIEW", "An age at a date gives birth years (5); a count is not an age"
 
 
 @case(2, "F2")
@@ -98,6 +98,37 @@ def notes_born_x_or_y_keeps_first_only():
         return w.hit(c, name="Petrov, Ivan", countries=["Russia"],
                      profile_notes="Ivan Petrov was born 1974 or 1976 in Moscow.")
     return one(b), SAFE, "DIFFERENT_ENTITY", "One agreeing hit date prevents a DOB clear (6. Date of birth)"
+
+
+def _age_case(text):
+    def b(w):
+        c = w.customer("Ivan Petrov", dob="1970-05-01", nationality="Russia", residence_country="RU")
+        return w.hit(c, name="Petrov, Ivan", countries=["Russia"], profile_notes=text)
+    return one(b)
+
+
+@case(2, "F2b")
+def notes_at_number_read_as_age():
+    """Added by a22cbf5: 'at N' cue. 'held accounts at 3 banks' -> age 3 in 2019 -> born 2015/16 -> DOB_MISMATCH."""
+    return _age_case("In 2019 Ivan Petrov held accounts at 3 banks in Cyprus."), SAFE, "DIFFERENT_ENTITY", "A count is not an age (5)"
+
+
+@case(2, "F2b")
+def notes_at_number_mid_sentence_read_as_age():
+    """'Ivan Petrov, at 7 different addresses, ... in 2015' -> age 7 -> born 2007/08."""
+    return _age_case("Ivan Petrov, at 7 different addresses, was linked to fraud in 2015."), SAFE, "DIFFERENT_ENTITY", "A count is not an age (5)"
+
+
+@case(2, "F2b")
+def notes_were_number_read_as_age():
+    """Added by a22cbf5: 'were N' cue. 'the assets were 40 apartments' -> age 40 in 2018 -> born 1977/78, customer 1970 cleared."""
+    return _age_case("In 2018 the assets were 40 apartments owned by Ivan Petrov."), SAFE, "DIFFERENT_ENTITY", "A count is not an age (5)"
+
+
+@case(2, "F2b")
+def notes_turned_number_read_as_age():
+    """'turned 3 companies into shells' -> age 3 (the negative lookahead lists units/people but not companies)."""
+    return _age_case("In 2016, Ivan Petrov turned 3 companies into shells."), SAFE, "DIFFERENT_ENTITY", "A count is not an age (5)"
 
 
 # ============================================================================ F3 dobs field shapes
@@ -144,7 +175,7 @@ def notes_month_first_us_format():
     def b(w):
         c = w.customer("Ivan Petrov", dob="1980-05-12", nationality="Russia", residence_country="RU")
         return w.hit(c, name="Petrov, Ivan", countries=["Russia"], profile_notes="Ivan Petrov was born on 05/12/1980 in Omsk.")
-    return one(b), SAFE, "DIFFERENT_ENTITY", "Hit dates are 'written as the provider wrote them' (5); D/M is ambiguous"
+    return one(b), SAFE, "SAME_ENTITY", "Hit dates are 'written as the provider wrote them' (5); D/M is ambiguous"
 
 
 # ============================================================================ F4 customer countries
@@ -249,7 +280,7 @@ def note_titlecase_name_split_by_particle():
         c = w.customer("Mohammed bin Salman Al Saud", dob="1985-08-31", nationality="Saudi Arabia", residence_country="SA")
         w.note(c, "Veriff verified the passport of Mohammed bin Salman Al Saud, born 1985-08-31, issued in Saudi Arabia.")
         return w.hit(c, name="Mohammed bin Salman", countries=["Saudi Arabia"])
-    return one(b), SAFE, "DIFFERENT_ENTITY", "Verified legal name vs hit names (4, 6. Name): the legal name agrees"
+    return one(b), SAFE, "REVIEW", "Verified legal name vs hit names (4, 6. Name): the legal name agrees"
 
 
 @case(5, "F5")
@@ -293,7 +324,7 @@ def note_two_digit_year_dob_falls_back_to_other_date():
         w.note(c, "Veriff approved IVAN PETROV on 2024-04-26 (account opened 2023-01-05). DOB 10.08.68. Russian passport.",
                created_at="2024-04-26")
         return w.hit(c, name="Petrov, Ivan", dobs=["1968"], countries=["Russia"])
-    return one(b), SAFE, "DIFFERENT_ENTITY", "Verified DOB = the person's birth date (4)"
+    return one(b), SAFE, "SAME_ENTITY", "Verified DOB = the person's birth date (4)"
 
 
 @case(6, "F6")
@@ -349,7 +380,7 @@ def company_name_all_digits():
         c = w.customer("3M Company", dob="1999-01-01", nationality="United States", residence_country="US", entity_type="Company")
         w.kyc_check(c, verified_name="3M Company", verified_dob="1999-01-01", document_country="United States")
         return w.hit(c, entity_type="Company", name="3M Co", countries=["United States"])
-    return one(b), SAFE, "DIFFERENT_ENTITY", "A name with no real parts can be neither confirmed nor cleared on name (8)"
+    return one(b), SAFE, "SAME_ENTITY", "A name with no real parts can be neither confirmed nor cleared on name (8)"
 
 
 # ============================================================================ F8 non-Latin scripts
@@ -415,7 +446,7 @@ def name_dob_agree_location_differs_confirms():
     def b(w):
         c = w.customer("Ivan Petrov", dob="1970-05-01", nationality="Cyprus", residence_country="CY")
         return w.hit(c, name="Petrov, Ivan", dobs=["1970"], countries=["Russia"])
-    return one(b), REVIEW, "SAME_ENTITY", "'A country difference does not clear a hit whose name and DOB agree: that hit is REVIEW' (6)"
+    return one(b), REVIEW, "REVIEW", "'A country difference does not clear a hit whose name and DOB agree: that hit is REVIEW' (6)"
 
 
 # ============================================================================ F12 judgement calls (policy-literal clears)
