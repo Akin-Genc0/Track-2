@@ -84,13 +84,14 @@ make test                                       # data-free policy, loader and p
 `make test` runs these, which you can also run directly:
 
 ```sh
-python3 tests/test_policy.py          # 27 synthetic rare-situation policy cases
+python3 tests/test_policy.py          # 41 synthetic rare-situation policy cases
 python3 tests/test_ages.py
 python3 tests/test_textutil.py
 python3 tests/test_loader.py
 python3 tests/test_runner_boundary.py
 python3 tests/test_real_format.py
 python3 tests/test_packaging.py
+python3 redteam/run_all.py --strict   # 48 red-team cases (36 fixed, 12 controls hold)
 python3 -m py_compile system/*.py
 ```
 
