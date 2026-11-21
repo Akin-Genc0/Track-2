@@ -44,3 +44,10 @@ python3 screen.py --list SAME random 10     # 10 random confirmed matches
 python3 screen.py --list LOCATION_MISMATCH  # filter by reason code
 python3 screen.py --case H-227FDA H-2D8E94  # full evidence for several hits
 ```
+
+## Web terminal (demo UI)
+
+```bash
+python3 app.py          # then open http://localhost:8000
+```
+An analyst workstation on top of the same engine: a command console, case files with a field-by-field evidence check, and live totals. Commands: `scan`, `list review 20`, `case H-227FDA`, `check` (a form to screen a person by hand), `demo 1`, `stats`, `about`, `help`. Click any `H-…` id to open its dossier. Standard library only, nothing to install.

@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sentinel — watchlist hit review</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Cpath d=%22M8 1.5 14 4v4.2c0 3.2-2.5 5.6-6 6.3-3.5-.7-6-3.1-6-6.3V4z%22 fill=%22%237AA2FF%22/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0E1621; --panel:#152131; --raise:#1B2A3D; --line:#24344A; --line-soft:#1D2B3E;
+  --text:#E6EDF5; --muted:#8A9BB0; --faint:#5D6E84;
+  --accent:#7AA2FF; --accent-soft:rgba(122,162,255,.12);
+  --match:#F2545B; --match-soft:rgba(242,84,91,.12);
+  --clear:#4FC3A1; --clear-soft:rgba(79,195,161,.12);
+  --review:#F2B84B; --review-soft:rgba(242,184,75,.12);
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--ink);color:var(--text);font:15px/1.5 var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+
+.app{display:grid;grid-template-columns:minmax(0,1fr) 340px;grid-template-rows:56px minmax(0,1fr);height:100vh}
+header{grid-column:1/-1;display:flex;align-items:center;gap:14px;padding:0 24px;border-bottom:1px solid var(--line);background:var(--ink)}
+.mark{width:22px;height:22px;display:grid;place-items:center}
+.brand{font-weight:600;font-size:16px;letter-spacing:-.01em}
+.brand span{color:var(--muted);font-weight:400;margin-left:10px}
+.status{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px}
+.led{width:8px;height:8px;border-radius:50%;background:var(--review)}
+.led.on{background:var(--clear);box-shadow:0 0 0 3px rgba(79,195,161,.18)}
+
+main{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
+#log{flex:1;overflow-y:auto;padding:28px 32px 12px;scroll-behavior:smooth}
+#log::-webkit-scrollbar,.rail::-webkit-scrollbar{width:10px}
+#log::-webkit-scrollbar-thumb,.rail::-webkit-scrollbar-thumb{background:var(--line);border-radius:10px;border:3px solid var(--ink)}
+.entry{max-width:1040px;margin:0 0 26px}
+.echo{font-family:var(--mono);font-size:13px;color:var(--muted);margin-bottom:10px}
+.echo b{color:var(--accent);font-weight:500;margin-right:8px}
+.note{color:var(--muted)}
+.err{color:var(--match)}
+h2{font-size:20px;font-weight:600;letter-spacing:-.015em;margin:0 0 4px}
+h3{font-size:15px;font-weight:600;margin:0 0 10px}
+.sub{color:var(--muted);margin:0 0 16px;font-size:14px}
+code,.id{font-family:var(--mono);font-size:12.5px}
+a.id{color:var(--accent);text-decoration:none;cursor:pointer;padding:1px 4px;margin:0 -4px;border-radius:4px}
+a.id:hover{background:var(--accent-soft)}
+a.id[data-run]{font-family:var(--sans);font-size:inherit}
+.src{color:var(--faint);font-family:var(--mono);font-size:11.5px;margin-left:6px}
+
+/* composer */
+.composer{border-top:1px solid var(--line);padding:14px 32px 18px;background:var(--ink)}
+.quick{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.quick button{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 13px;font-size:13px;color:var(--text);cursor:pointer}
+.quick button:hover{border-color:var(--accent);color:var(--accent)}
+.cmdbox{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:0 14px;height:46px;max-width:1040px}
+.cmdbox:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.cmdbox .ps{font-family:var(--mono);color:var(--accent);font-size:14px}
+#cmd{flex:1;background:none;border:0;outline:0;font-family:var(--mono);font-size:14px;height:100%}
+#cmd::placeholder{color:var(--faint)}
+.kbd{font-family:var(--mono);font-size:11px;color:var(--faint);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+
+/* right rail */
+.rail{overflow-y:auto;padding:24px 22px;display:flex;flex-direction:column;gap:28px}
+.rail h4{font-size:13px;font-weight:600;color:var(--muted);margin:0 0 12px}
+.total{font-size:34px;font-weight:600;letter-spacing:-.03em;line-height:1}
+.total small{font-size:14px;color:var(--muted);font-weight:400;letter-spacing:0;margin-left:6px}
+.stack{display:flex;height:10px;border-radius:6px;overflow:hidden;margin:16px 0 14px;background:var(--line-soft)}
+.stack i{display:block;height:100%}
+.legend{display:grid;grid-template-columns:auto 1fr auto;gap:8px 10px;font-size:14px;align-items:center}
+.sw{width:10px;height:10px;border-radius:3px}
+.legend .n{font-variant-numeric:tabular-nums;font-weight:500}
+.legend button{all:unset;cursor:pointer;color:var(--text)}
+.legend button:hover{color:var(--accent)}
+.grid50{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;margin-bottom:10px}
+.grid50 i{aspect-ratio:1;border-radius:3px;background:var(--clear);opacity:.85}
+.grid50 i.x{background:var(--match)}
+.kv{display:flex;justify-content:space-between;font-size:14px;padding:3px 0;color:var(--muted)}
+.kv b{color:var(--text);font-weight:500;font-variant-numeric:tabular-nums}
+.recent{display:flex;flex-direction:column;gap:2px}
+.recent a{display:grid;grid-template-columns:8px 1fr;gap:10px;align-items:center;padding:7px 8px;margin:0 -8px;border-radius:7px;color:var(--text);text-decoration:none;font-size:13.5px;cursor:pointer}
+.recent a:hover{background:var(--panel)}
+.recent .dot{width:8px;height:8px;border-radius:50%}
+.recent small{display:block;color:var(--faint);font-family:var(--mono);font-size:11px}
+
+/* tables */
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{text-align:left;font-weight:500;color:var(--muted);font-size:13px;padding:8px 12px;border-bottom:1px solid var(--line)}
+td{padding:9px 12px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+tr.row{cursor:pointer}
+tr.row:hover td{background:var(--panel)}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:500;padding:2px 9px;border-radius:999px;white-space:nowrap}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.p-same{color:var(--match);background:var(--match-soft)}
+.p-diff{color:var(--clear);background:var(--clear-soft)}
+.p-rev{color:var(--review);background:var(--review-soft)}
+.reason{font-family:var(--mono);font-size:12px;color:var(--muted)}
+
+/* dossier */
+.dossier{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.d-head{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline;padding:16px 20px;border-bottom:1px solid var(--line)}
+.d-head h3{margin:0;font-size:16px}
+.d-head .meta{color:var(--muted);font-size:13.5px}
+.trace{padding:10px 20px;color:var(--muted);font-size:13px;border-bottom:1px solid var(--line);background:rgba(14,22,33,.35)}
+.ledger{display:grid;grid-template-columns:130px minmax(0,1fr) 112px minmax(0,1fr)}
+.ledger>div{padding:11px 20px;border-bottom:1px solid var(--line-soft)}
+.ledger .hd{color:var(--muted);font-size:13px;font-weight:500;padding-top:12px;padding-bottom:10px}
+.ledger .f{color:var(--muted);font-size:13.5px}
+.ledger .c{display:flex;align-items:flex-start;justify-content:center;padding-left:0;padding-right:0}
+.chk{font-size:12px;font-weight:500;padding:2px 8px;border-radius:6px;white-space:nowrap}
+.chk.ok{color:var(--clear);background:var(--clear-soft)}
+.chk.bad{color:var(--match);background:var(--match-soft)}
+.chk.unk{color:var(--muted);background:var(--line-soft)}
+.aka{display:block;color:var(--muted);font-size:13px;margin-top:2px}
+
+.verdict{position:relative;padding:20px 22px 20px 26px;display:grid;grid-template-columns:1fr auto;gap:6px 24px;align-items:start;animation:reveal .45s ease-out both}
+.verdict::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px}
+.verdict .t{font-size:22px;font-weight:600;letter-spacing:-.02em;line-height:1.2}
+.verdict .why{grid-column:1/-1;color:var(--text);opacity:.9;max-width:78ch;font-size:14.5px}
+.verdict .code{font-family:var(--mono);font-size:12px;padding:4px 9px;border-radius:6px;align-self:center}
+.verdict .ev{grid-column:1/-1;color:var(--muted);font-size:13px;margin-top:4px}
+.v-same{background:var(--match-soft)}.v-same::before{background:var(--match)}.v-same .t{color:var(--match)}.v-same .code{background:rgba(242,84,91,.18);color:var(--match)}
+.v-diff{background:var(--clear-soft)}.v-diff::before{background:var(--clear)}.v-diff .t{color:var(--clear)}.v-diff .code{background:rgba(79,195,161,.18);color:var(--clear)}
+.v-rev{background:var(--review-soft)}.v-rev::before{background:var(--review)}.v-rev .t{color:var(--review)}.v-rev .code{background:rgba(242,184,75,.18);color:var(--review)}
+@keyframes reveal{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.standalone{border:1px solid var(--line);border-radius:14px;overflow:hidden}
+
+/* progress */
+.steps{display:flex;flex-direction:column;gap:8px;margin:4px 0 6px;max-width:520px}
+.step{display:grid;grid-template-columns:18px 1fr;gap:10px;align-items:center;font-size:14px;color:var(--muted)}
+.step.done{color:var(--text)}
+.spin{width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.tick{color:var(--clear);font-size:14px}
+
+/* bars */
+.bars{display:grid;grid-template-columns:220px 1fr 48px;gap:8px 14px;align-items:center;font-size:13.5px;max-width:760px}
+.bars .lab{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.bars .bar{height:8px;border-radius:5px}
+.bars .n{text-align:right;font-variant-numeric:tabular-nums}
+
+/* form */
+.form{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:20px 28px;max-width:1040px}
+.form fieldset{border:0;padding:0;margin:0;display:grid;gap:12px;align-content:start}
+.form legend{font-weight:600;margin-bottom:12px;font-size:15px}
+.form label{display:grid;gap:5px;align-content:start;font-size:13px;color:var(--muted)}
+.form input,.form select{background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:14px;color:var(--text);width:100%}
+.form input:focus,.form select:focus{outline:0;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.form .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form .actions{grid-column:1/-1;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.btn{background:var(--accent);color:#0B1424;border:0;border-radius:8px;padding:9px 18px;font-weight:600;cursor:pointer}
+.btn:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line);font-weight:500}
+.btn.ghost:hover{border-color:var(--accent);color:var(--accent)}
+.presets{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.presets button{background:none;border:1px solid var(--line);border-radius:6px;padding:4px 9px;font-size:12.5px;color:var(--muted);cursor:pointer}
+.presets button:hover{color:var(--accent);border-color:var(--accent)}
+
+.scenario{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--line)}
+.scenario>div{padding:14px 20px}
+.scenario>div+div{border-left:1px solid var(--line)}
+.scenario .who{font-weight:500}
+.scenario .det{color:var(--muted);font-size:13.5px}
+.quote{color:var(--muted);font-size:13.5px;font-style:italic;margin-top:6px}
+
+.welcome{padding:6px 0 4px}
+.welcome h1{font-size:28px;font-weight:600;letter-spacing:-.025em;margin:0 0 8px;line-height:1.2}
+.welcome p{color:var(--muted);max-width:64ch;margin:0 0 6px}
+.helpgrid{display:grid;grid-template-columns:auto 1fr;gap:6px 22px;font-size:14px}
+.helpgrid code{color:var(--accent)}
+.helpgrid span{color:var(--muted)}
+
+@media (max-width:1100px){.app{grid-template-columns:1fr}.rail{display:none}}
+@media (max-width:760px){#log{padding:20px 16px}.composer{padding:12px 16px}.ledger{grid-template-columns:90px 1fr 80px 1fr}.ledger>div{padding:9px 10px}.form,.scenario{grid-template-columns:1fr}.scenario>div+div{border-left:0;border-top:1px solid var(--line)}.bars{grid-template-columns:140px 1fr 40px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <svg class="mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 14 4v4.2c0 3.2-2.5 5.6-6 6.3-3.5-.7-6-3.1-6-6.3V4z" fill="none" stroke="#7AA2FF" stroke-width="1.4"/><path d="m5.4 8.1 1.8 1.8 3.4-3.6" fill="none" stroke="#7AA2FF" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="brand">Sentinel<span>Watchlist hit review</span></div>
+    <div class="status"><span class="led" id="led"></span><span id="statusText">Loading customer data…</span></div>
+  </header>
+
+  <main>
+    <div id="log" aria-live="polite"></div>
+    <div class="composer">
+      <div class="quick" id="quick">
+        <button data-run="scan">Run full review</button>
+        <button data-run="list review 15">Analyst queue</button>
+        <button data-run="list match 15">Confirmed matches</button>
+        <button data-run="check">Screen a person</button>
+        <button data-run="demo">Walkthrough</button>
+        <button data-run="help">Commands</button>
+      </div>
+      <div class="cmdbox">
+        <span class="ps">›</span>
+        <input id="cmd" autocomplete="off" spellcheck="false" placeholder="Type a command or a hit ID, e.g. case H-227FDA" aria-label="Command">
+        <span class="kbd">↵</span>
+      </div>
+    </div>
+  </main>
+
+  <aside class="rail" id="rail">
+    <section>
+      <h4>Decisions</h4>
+      <div class="total" id="rTotal">—<small>hits</small></div>
+      <div class="stack" id="rStack"></div>
+      <div class="legend" id="rLegend"></div>
+    </section>
+    <section>
+      <h4>Self-test on practice labels</h4>
+      <div class="grid50" id="rGrid"></div>
+      <div class="kv"><span>Decision</span><b id="rDec">—</b></div>
+      <div class="kv"><span>Reason code</span><b id="rRea">—</b></div>
+      <div class="kv"><span>Customer record</span><b id="rCus">—</b></div>
+      <div class="kv"><span>Real matches cleared</span><b id="rWorst">—</b></div>
+    </section>
+    <section>
+      <h4>Recently opened</h4>
+      <div class="recent" id="rRecent"><span class="note" style="font-size:13.5px">Open a hit to see it here.</span></div>
+    </section>
+  </aside>
+</div>
+
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const log = $("#log"), cmd = $("#cmd");
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const ids = t => esc(t).replace(/\b((?:[AH]|CUS|KYC|NOTE|SR)-[0-9A-F]{6})\b/g, (m) => /^[AH]-/.test(m) ? `<a class="id" data-id="${m}">${m}</a>` : `<span class="id">${m}</span>`);
+let ready = false, busy = false, hist = [], hpos = 0, recent = [];
+
+const V = {
+  SAME_ENTITY: {cls:"same", title:"Same person", sub:"Escalate to compliance", pill:"Match", color:"var(--match)"},
+  DIFFERENT_ENTITY: {cls:"diff", title:"Different person", sub:"Hit cleared as a false positive", pill:"Cleared", color:"var(--clear)"},
+  REVIEW: {cls:"rev", title:"Needs an analyst", sub:"The evidence can't settle it", pill:"Review", color:"var(--review)"},
+};
+const pill = d => `<span class="pill p-${V[d].cls}">${V[d].pill}</span>`;
+
+async function api(path, opts){
+  const r = await fetch(path, opts);
+  const j = await r.json().catch(() => ({error:"The server sent an unreadable response."}));
+  if (!r.ok && !j.error) j.error = "Request failed (" + r.status + ")";
+  return j;
+}
+function entry(cmdText){
+  const e = document.createElement("div"); e.className = "entry";
+  if (cmdText) e.innerHTML = `<div class="echo"><b>›</b>${esc(cmdText)}</div>`;
+  log.appendChild(e); scrollEnd(); return e;
+}
+function add(e, h){ const d = document.createElement("div"); d.innerHTML = h; while (d.firstChild) e.appendChild(d.firstChild); scrollEnd(); return e.lastElementChild; }
+function scrollEnd(){ log.scrollTop = log.scrollHeight; }
+
+async function steps(e, labels, ms = 260){
+  const box = add(e, `<div class="steps"></div>`);
+  for (const l of labels){
+    const s = document.createElement("div"); s.className = "step"; s.innerHTML = `<span class="spin"></span><span>${esc(l)}</span>`;
+    box.appendChild(s); scrollEnd(); await sleep(ms);
+    s.className = "step done"; s.firstChild.outerHTML = `<span class="tick">✓</span>`;
+  }
+  return box;
+}
+
+function verdictHTML(dec, code, why, evidence, extraCls = ""){
+  const v = V[dec];
+  return `<div class="verdict v-${v.cls} ${extraCls}">
+    <div><div class="t">${v.title}</div><div class="note" style="font-size:14px">${v.sub}</div></div>
+    <span class="code">${esc(code)}</span>
+    <div class="why">${ids(why)}</div>
+    ${evidence ? `<div class="ev">Evidence used: ${ids(evidence.join(", ")) || "none"}</div>` : ""}
+  </div>`;
+}
+
+// ---------- rail ----------
+function paintRail(s){
+  const c = s.counts, tot = s.hits;
+  $("#rTotal").innerHTML = `${tot}<small>hits across ${s.alerts} alerts</small>`;
+  const order = [["SAME_ENTITY","Confirmed match","list match 20"],["REVIEW","Needs an analyst","list review 20"],["DIFFERENT_ENTITY","Cleared","list cleared 20"]];
+  $("#rStack").innerHTML = order.map(([k]) => `<i style="width:${(c[k]/tot*100).toFixed(2)}%;background:${V[k].color}"></i>`).join("");
+  $("#rLegend").innerHTML = order.map(([k, lab, run]) => `<span class="sw" style="background:${V[k].color}"></span><button data-run="${run}">${lab}</button><span class="n">${c[k]}</span>`).join("");
+  if (s.eval){
+    $("#rGrid").innerHTML = s.eval.rows.map(r => `<i class="${r.ok ? "" : "x"}" title="${esc(r.hit_id)}"></i>`).join("");
+    $("#rDec").textContent = `${s.eval.decision} / ${s.eval.n}`;
+    $("#rRea").textContent = `${s.eval.reason} / ${s.eval.n}`;
+    $("#rCus").textContent = `${s.eval.customer} / ${s.eval.n}`;
+    $("#rWorst").textContent = s.eval.worst; $("#rWorst").style.color = s.eval.worst ? "var(--match)" : "var(--clear)";
+  }
+}
+function pushRecent(h, customer){
+  recent = [{id:h.hit_id, d:h.decision, name:h.name, customer}, ...recent.filter(r => r.id !== h.hit_id)].slice(0, 8);
+  $("#rRecent").innerHTML = recent.map(r => `<a data-id="${r.id}"><span class="dot" style="background:${V[r.d].color}"></span><span>${esc(customer && r.id === h.hit_id ? r.customer : r.customer)} <span class="note">vs</span> ${esc(r.name)}<small>${r.id}</small></span></a>`).join("");
+}
+
+// ---------- boot ----------
+async function boot(){
+  const e = entry();
+  add(e, `<div class="welcome"><h1>Review watchlist hits with evidence you can audit.</h1>
+    <p>Sentinel checks each sanctions, PEP and adverse-media hit against everything the bank knows about the customer, then decides: same person, different person, or send to an analyst.</p></div>`);
+  const st = add(e, `<div class="steps"><div class="step"><span class="spin"></span><span>Loading customers, KYC checks and support notes</span></div></div>`);
+  let s;
+  while (true){
+    s = await api("/api/status").catch(() => ({error:"Can't reach the server. Start it with: python3 app.py"}));
+    if (s.ready || s.error) break;
+    await sleep(400);
+  }
+  if (s.error){ st.innerHTML = `<p class="err">${esc(s.error)}</p>`; $("#statusText").textContent = "Offline"; return; }
+  const stats = await api("/api/stats");
+  st.innerHTML = `<div class="step done"><span class="tick">✓</span><span>Loaded ${stats.customers.toLocaleString()} customer records and reviewed ${stats.hits} hits in ${s.load_secs}s</span></div>`;
+  add(e, `<p class="note" style="margin-top:12px">Start with <a class="id" data-run="scan">Run full review</a>, open a hit like <a class="id" data-id="H-80B4B5">H-80B4B5</a>, or <a class="id" data-run="check">screen a person</a> yourself.</p>`);
+  ready = true;
+  $("#led").classList.add("on");
+  $("#statusText").textContent = "Ready · deterministic rules, no AI in the decision";
+  paintRail(stats);
+  cmd.focus();
+}
+
+// ---------- commands ----------
+const CMDS = {
+  help:  {d:"List commands", f: help},
+  scan:  {d:"Review every alert and show the totals", f: scan},
+  list:  {d:"List hits: list review | match | cleared | REASON_CODE, with optional count and 'random'", f: list},
+  case:  {d:"Open the full case file for a hit or alert, e.g. case H-227FDA", f: caseCmd},
+  check: {d:"Screen a person by hand", f: check},
+  demo:  {d:"Step through 11 example scenarios, or one with demo 7", f: demo},
+  stats: {d:"Show decision totals by reason", f: stats},
+  about: {d:"How Sentinel decides", f: about},
+  clear: {d:"Clear the console", f: async () => { log.innerHTML = ""; }},
+};
+async function help(e){
+  add(e, `<h3>Commands</h3><div class="helpgrid">${Object.entries(CMDS).map(([k,v]) => `<code>${k}</code><span>${esc(v.d)}</span>`).join("")}</div>
+  <p class="note" style="margin-top:12px;font-size:14px">You can also type a hit ID on its own. ↑ and ↓ recall earlier commands; Tab completes.</p>`);
+}
+async function stats(e){
+  const s = await api("/api/stats"); if (s.error) return add(e, `<p class="err">${esc(s.error)}</p>`);
+  const mx = Math.max(...Object.values(s.reasons));
+  const col = r => (/MATCH$/.test(r) && !/MISMATCH/.test(r)) ? "var(--match)" : (r === "INSUFFICIENT_DATA" || r.startsWith("AMBIG")) ? "var(--review)" : "var(--clear)";
+  add(e, `<h3>Decisions by reason</h3><div class="bars">${Object.entries(s.reasons).map(([r,n]) =>
+    `<span class="lab">${r}</span><span class="bar" style="width:${Math.max(1.5, n/mx*100)}%;background:${col(r)}"></span><span class="n">${n}</span>`).join("")}</div>`);
+}
+async function scan(e){
+  const s = await api("/api/stats"); if (s.error) return add(e, `<p class="err">${esc(s.error)}</p>`);
+  add(e, `<h2>Full review</h2><p class="sub">${s.alerts} alerts containing ${s.hits} watchlist hits</p>`);
+  await steps(e, ["Finding each customer across accounts, logins and emails","Merging duplicate records into one person","Taking name, birth date and country from the latest approved ID check","Reading hit birth dates from listings, profile text and web results","Applying the identity policy to every hit"], 330);
+  const c = s.counts, tot = s.hits;
+  add(e, `<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0;max-width:760px">
+    ${[["SAME_ENTITY","list match 20"],["REVIEW","list review 20"],["DIFFERENT_ENTITY","list cleared 20"]].map(([k,run]) => `
+      <button data-run="${run}" style="all:unset;cursor:pointer;background:var(--panel);border:1px solid var(--line);border-top:3px solid ${V[k].color};border-radius:10px;padding:14px 16px">
+        <div style="font-size:28px;font-weight:600;letter-spacing:-.02em">${c[k]}</div>
+        <div style="color:var(--muted);font-size:13.5px">${V[k].title} · ${Math.round(c[k]/tot*100)}%</div></button>`).join("")}
+  </div>`);
+  await stats(e);
+  if (s.eval) add(e, `<p class="note" style="margin-top:16px">Against the ${s.eval.n} practice labels: ${s.eval.decision} decisions, ${s.eval.reason} reason codes and ${s.eval.customer} customer records correct. Real matches wrongly cleared: <strong style="color:${s.eval.worst ? "var(--match)" : "var(--clear)"}">${s.eval.worst}</strong>.</p>`);
+  paintRail(s);
+}
+async function list(e, args){
+  let n = 15, f = [], rnd = false;
+  for (const a of args){ if (/^\d+$/.test(a)) n = +a; else if (/^rand/i.test(a)) rnd = true; else f.push(a); }
+  const r = await api(`/api/list?n=${n}&filter=${encodeURIComponent(f.join(","))}${rnd ? "&random=1" : ""}`);
+  if (r.error) return add(e, `<p class="err">${esc(r.error)}</p>`);
+  const label = {REVIEW:"Analyst queue", MATCH:"Confirmed matches", SAME:"Confirmed matches", CLEARED:"Cleared hits", DIFFERENT:"Cleared hits"}[(f[0]||"").toUpperCase()] || (f.length ? f.join(" ") : "All hits");
+  add(e, `<h2>${esc(label)}</h2><p class="sub">${r.total} hits${r.total > n ? `, showing ${n}` : ""}. Select a row to open its case file.</p>`);
+  if (!r.rows.length) return add(e, `<p class="note">Nothing matches that filter. Try list review, list match or list cleared.</p>`);
+  add(e, `<table><thead><tr><th>Hit</th><th>Decision</th><th>Customer</th><th>Flagged as</th><th>List</th><th>Reason</th></tr></thead><tbody>
+    ${r.rows.map(x => `<tr class="row" data-id="${x.hit_id}"><td><a class="id" data-id="${x.hit_id}">${x.hit_id}</a></td><td>${pill(x.decision)}</td><td>${esc(x.customer)}</td><td>${esc(x.flagged)}</td><td class="note">${esc(x.category || "")}</td><td class="reason">${esc(x.reason_code)}</td></tr>`).join("")}
+  </tbody></table>`);
+}
+function mark(kind, h){
+  const e = h.explanation || "", c = h.reason_code;
+  if (kind === "name"){ if (c === "NAME_MISMATCH_VERIFIED") return ["Conflict","bad"]; if (/name agrees|Name and date of birth agree/i.test(e) || /^NAME_(DOB|LOCATION)/.test(c)) return ["Agrees","ok"]; return ["Unsettled","unk"]; }
+  if (kind === "dob"){ if (c === "DOB_MISMATCH" || c === "TEMPORAL_IMPOSSIBILITY") return ["Conflict","bad"]; if (/NAME_DOB/.test(c) || /date of birth agree|birth .* agrees|Name and date of birth agree/i.test(e)) return ["Agrees","ok"]; return ["Unsettled","unk"]; }
+  if (kind === "ctry"){ if (/linked only to/.test(e)) return ["Conflict","bad"]; if (/Both (are|the customer)/.test(e) || /LOCATION_MATCH/.test(c)) return ["Agrees","ok"]; return ["Unsettled","unk"]; }
+  if (kind === "type") return c === "ENTITY_TYPE_MISMATCH" ? ["Conflict","bad"] : ["Agrees","ok"];
+}
+async function caseCmd(e, args){
+  const id = (args[0] || "").toUpperCase();
+  if (!id) return add(e, `<p class="note">Add a hit or alert ID, for example <code>case H-227FDA</code>.</p>`);
+  const r = await api("/api/case?id=" + encodeURIComponent(id));
+  if (r.error) return add(e, `<p class="err">No hit or alert has the ID ${esc(id)}. Copy one from a list, e.g. list review.</p>`);
+  const a = r.alert;
+  for (const h of r.hits){
+    const C = r.customers[0];
+    const src = s => s ? `<span class="src">${ids(s)}</span>` : "";
+    const row = (f, cv, hv, k) => { const m = k ? mark(k, h) : null; return `<div class="f">${f}</div><div>${cv}</div><div class="c">${m ? `<span class="chk ${m[1]}">${m[0]}</span>` : ""}</div><div>${hv}</div>`; };
+    const cname = C ? (C.verified_name ? `${esc(C.verified_name)}${src(C.verified_src)}<span class="aka">Verified on ID check · on file as ${esc(C.names.join(", "))}</span>` : esc(C.names.join(", "))) : esc(a.customer_name);
+    const cdob = C && C.dob ? esc(C.dob) + src(C.dob_src) : esc(a.dob || "Not known");
+    const cctry = C ? (C.countries.map(x => esc(x.name) + src(x.src)).join("<br>") || "Not known") : esc(a.country || "Not known");
+    let led = `<div class="hd">Field</div><div class="hd">Customer ${C ? ids(C.records.join(", ")) : ""}</div><div class="hd" style="text-align:center">Check</div><div class="hd">Watchlist ${ids(h.hit_id)}</div>`;
+    led += row("Name", cname, esc(h.name) + (h.aliases.length ? `<span class="aka">Also known as ${esc(h.aliases.join("; "))}</span>` : ""), "name");
+    led += row("Type", esc(C ? (a.entity_type) : a.entity_type), esc(h.entity_type), "type");
+    led += row("Born", cdob, h.born.length ? `${esc(h.born.join(" or "))}<span class="aka">From ${esc(h.born_src)}</span>` : `<span class="note">Not given</span>`, "dob");
+    led += row("Countries", cctry, esc(h.countries.join(", ") || "Not given"), "ctry");
+    led += row("Listing", "", `${esc(h.category || "—")}${h.gender ? `, ${esc(h.gender.toLowerCase())}` : ""}<span class="aka">Screening match score ${esc(h.match_score)}</span>`);
+    if (h.position) led += row("Role or allegation", "", esc(h.position.length > 200 ? h.position.slice(0, 200) + "…" : h.position));
+    if (h.deceased) led += row("Died", "", esc(h.deceased));
+    const multi = r.customers.length > 1 ? `<div class="trace" style="color:var(--review)">${r.customers.length} different customers fit this alert. Each was checked separately; the first is shown.</div>` : "";
+    const nocust = !r.customers.length ? `<div class="trace">No customer record matched, so only the screened details were used.</div>` : "";
+    const box = add(e, `<div class="dossier">
+      <div class="d-head"><h3>${esc(a.customer_name)} <span class="note" style="font-weight:400">vs</span> ${esc(h.name)}</h3>
+        <span class="meta">Alert ${ids(a.alert_id)}, screened ${esc(a.screened_at)}</span></div>
+      <div class="trace">Customer found via ${esc(r.path)}</div>${multi}${nocust}
+      <div class="ledger">${led}</div>
+      <div class="vslot"><div class="steps" style="padding:16px 22px;margin:0"><div class="step"><span class="spin"></span><span>Applying the identity policy</span></div></div></div>
+    </div>`);
+    await sleep(520);
+    box.querySelector(".vslot").innerHTML = verdictHTML(h.decision, h.reason_code, h.explanation, h.evidence);
+    scrollEnd();
+    pushRecent(h, a.customer_name);
+  }
+}
+const PRESETS = {
+  "Typo":       {customer:{name:"Jerome Kervel", type:"Individual", dob:"1977-01-11", country:"France"}, hit:{name:"Kerviel, Jérôme", type:"Individual", dobs:"1977", countries:"France"}},
+  "Age in text":{customer:{name:"Elvira Velasco Morillo", type:"Individual", dob:"1968-03-05", country:"Spain"}, hit:{name:"Velasco Morillo, Elvira", type:"Individual", countries:"Spain", profile:"Formal charges were brought against Elvira Velasco Morillo, aged 30, in November 1998."}},
+  "Too young":  {customer:{name:"Samuel Bernard", type:"Individual", dob:"2010-04-02", country:"United Kingdom"}, hit:{name:"Bernard, Samuel", type:"Individual", countries:"United Kingdom", profile:"According to bbc.co.uk; March 10, 2019: Samuel Bernard was charged with fraud."}},
+  "Country differs":{customer:{name:"Rajesh Kumar", type:"Individual", dob:"1982-07-19", country:"United Kingdom"}, hit:{name:"Rajesh Kumar", type:"Individual", dobs:"1982", countries:"India"}},
+};
+async function check(e){
+  const f = add(e, `<form class="form" autocomplete="off">
+    <fieldset><legend>Customer</legend>
+      <label>Full name<input name="c.name" required placeholder="e.g. Jerome Kerviel"></label>
+      <div class="row2"><label>Type<select name="c.type"><option>Individual</option><option>Company</option></select></label>
+      <label>Date of birth<input name="c.dob" placeholder="YYYY-MM-DD"></label></div>
+      <label>Country<input name="c.country" placeholder="e.g. France"></label>
+    </fieldset>
+    <fieldset><legend>Watchlist hit</legend>
+      <label>Listed name<input name="h.name" required placeholder="e.g. Kerviel, Jérôme"></label>
+      <div class="row2"><label>Type<select name="h.type"><option>Individual</option><option>Company</option></select></label>
+      <label>Birth year or date<input name="h.dobs" placeholder="e.g. 1976; 1977"></label></div>
+      <div class="row2"><label>Countries<input name="h.countries" placeholder="Separate with ;"></label>
+      <label>Date of death<input name="h.deceased" placeholder="Optional"></label></div>
+      <label>Aliases<input name="h.aliases" placeholder="Separate with ;"></label>
+      <label>Profile text<input name="h.profile" placeholder="e.g. Charged in May 2010, aged 33."></label>
+    </fieldset>
+    <div class="actions"><button class="btn" type="submit">Screen this person</button><button class="btn ghost" type="reset">Clear</button>
+      <div class="presets"><span class="note" style="font-size:12.5px;align-self:center">Try:</span>${Object.keys(PRESETS).map(k => `<button type="button" data-preset="${k}">${k}</button>`).join("")}</div></div>
+    <div class="out" style="grid-column:1/-1"></div>
+  </form>`);
+  f.querySelector("input").focus();
+  f.addEventListener("click", ev => {
+    const p = ev.target.closest("[data-preset]"); if (!p) return;
+    f.reset(); const P = PRESETS[p.dataset.preset];
+    for (const [g, o] of [["c", P.customer], ["h", P.hit]]) for (const [k, v] of Object.entries(o)) { const el = f.elements[`${g}.${k}`]; if (el) el.value = v; }
+  });
+  f.addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const val = k => f.elements[k].value.trim();
+    const body = {customer:{name:val("c.name"), type:val("c.type"), dob:val("c.dob"), country:val("c.country")},
+                  hit:{name:val("h.name"), type:val("h.type"), dobs:val("h.dobs"), countries:val("h.countries"), deceased:val("h.deceased"), aliases:val("h.aliases"), profile:val("h.profile")}};
+    const out = f.querySelector(".out");
+    out.innerHTML = `<div class="steps"><div class="step"><span class="spin"></span><span>Applying the identity policy</span></div></div>`;
+    await sleep(380);
+    const r = await api("/api/check", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+    out.innerHTML = r.error ? `<p class="err">${esc(r.error)}</p>` : `<div class="standalone">${verdictHTML(r.decision, r.reason_code, r.explanation)}</div>`;
+    scrollEnd();
+  });
+}
+async function demo(e, args){
+  const n = args[0] && /^\d+$/.test(args[0]) ? +args[0] : null;
+  const r = await api("/api/demo" + (n ? "?n=" + n : ""));
+  if (r.error) return add(e, `<p class="err">${esc(r.error)}</p>`);
+  if (!r.length) return add(e, `<p class="note">There are 11 scenarios. Try demo 1 to demo 11.</p>`);
+  if (r.length > 1) add(e, `<h2>Walkthrough</h2><p class="sub">${r.length} scenarios covering every kind of decision</p>`);
+  for (const d of r){
+    const [head, ...rest] = d.title.split(" - ");
+    const box = add(e, `<div class="dossier" style="margin-bottom:14px">
+      <div class="d-head"><h3>Scenario ${d.n}: ${esc(rest.join(" - ") || head)}</h3></div>
+      <div class="scenario">
+        <div><div class="note" style="font-size:13px">Customer</div><div class="who">${esc(d.customer.name)}</div>
+          <div class="det">${esc(d.customer.type)}, born ${esc(d.customer.dob || "unknown")}, ${esc(d.customer.country || "country unknown")}</div></div>
+        <div><div class="note" style="font-size:13px">Watchlist hit</div><div class="who">${esc(d.hit.name)}</div>
+          <div class="det">${esc(d.hit.type)}, born ${esc(d.hit.dobs || "not given")}, ${esc(d.hit.countries || "no country")}${d.hit.deceased ? `, died ${esc(d.hit.deceased)}` : ""}</div>
+          ${d.hit.profile ? `<div class="quote">“${esc(d.hit.profile)}”</div>` : ""}</div>
+      </div>
+      <div class="vslot"><div class="steps" style="padding:16px 22px;margin:0"><div class="step"><span class="spin"></span><span>Applying the identity policy</span></div></div></div>
+    </div>`);
+    await sleep(r.length > 1 ? 380 : 450);
+    box.querySelector(".vslot").innerHTML = verdictHTML(d.decision, d.reason_code, d.explanation);
+    scrollEnd();
+  }
+}
+async function about(e){
+  add(e, `<h2>How Sentinel decides</h2><div style="max-width:72ch;color:var(--text);opacity:.92">
+  <p>Every hit goes through the same five steps, taken from the bank's identity policy.</p>
+  <ol style="padding-left:20px;margin:0 0 14px;display:grid;gap:6px">
+    <li>Find the customer through the alert's account, login or email link, or by searching on name, birth date, country and city.</li>
+    <li>Treat records as one person when they share a phone number and full birth date, or the same document number on an approved ID check.</li>
+    <li>Trust the latest approved ID check over anything the customer typed in themselves.</li>
+    <li>Work out the hit's birth year from its listing, its profile text, or web results that describe the same kind of listing in the same country.</li>
+    <li>Clear a hit only when a fact contradicts it, confirm only when name and birth date agree, and send everything else to an analyst.</li>
+  </ol>
+  <p class="note">Clearing a real match is the worst mistake, so a different country alone never clears a hit whose name and birth date agree. There is no AI in the decision: the same input always gives the same answer, with the records it relied on.</p></div>`);
+}
+
+// ---------- input ----------
+async function run(line){
+  const raw = line.trim(); if (!raw || busy) return;
+  hist.push(raw); hpos = hist.length;
+  const [c, ...args] = raw.split(/\s+/); const k = c.toLowerCase();
+  if (k === "clear"){ log.innerHTML = ""; return; }
+  const e = entry(raw);
+  if (!ready && k !== "help"){ add(e, `<p class="note">Still loading customer data. This takes about 30 seconds after starting the server.</p>`); return; }
+  busy = true;
+  try{
+    if (CMDS[k]) await CMDS[k].f(e, args);
+    else if (/^[AH]-[0-9A-F]{6}$/i.test(k)) await caseCmd(e, [c]);
+    else add(e, `<p class="note">There's no command called “${esc(c)}”. Type <code>help</code> to see what's available.</p>`);
+  }catch(err){ add(e, `<p class="err">${esc(err.message)}</p>`); }
+  busy = false;
+  if (k !== "check") cmd.focus();
+}
+cmd.addEventListener("keydown", e => {
+  if (e.key === "Enter"){ const v = cmd.value; cmd.value = ""; run(v); }
+  else if (e.key === "ArrowUp"){ if (hpos > 0){ hpos--; cmd.value = hist[hpos]; } e.preventDefault(); }
+  else if (e.key === "ArrowDown"){ if (hpos < hist.length){ hpos++; cmd.value = hist[hpos] ?? ""; } e.preventDefault(); }
+  else if (e.key === "Tab"){ e.preventDefault(); const v = cmd.value.toLowerCase(); const m = Object.keys(CMDS).filter(x => x.startsWith(v)); if (m.length === 1) cmd.value = m[0] + " "; }
+});
+document.addEventListener("click", e => {
+  const r = e.target.closest("[data-run]"); if (r){ e.preventDefault(); run(r.dataset.run); return; }
+  const a = e.target.closest("[data-id]"); if (a){ e.preventDefault(); run("case " + a.dataset.id); }
+});
+boot();
+})();
+</script>
+</body>
+</html>
