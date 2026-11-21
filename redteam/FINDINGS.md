@@ -4,6 +4,9 @@
 python3 redteam/run_all.py            # 48 synthetic cases; checks each one still behaves as recorded
 python3 redteam/run_all.py --strict   # checks each case gives a decision the policy allows (36 fail today)
 ```
+**Status after `bot/fixes`:** F1–F10 fixed in system code (`--strict` fails 2 of 48, both F12, left as a team call). The default
+run now prints FIXED for those cases on purpose; use `--strict` as the gate. Details: system/README.md, "Red team".
+
 Each case in `redteam/cases.py` builds a tiny data room (one customer, one alert, one hit, plus notes, KYC and search rows
 where needed), runs the real `screen.run`, and records the decision. Stdlib only, no pytest. Re-checked against `bot/core-system` @ a22cbf5 (first written against 6f21c02).
 When a fix lands, its cases print **FIXED** and the default run fails on purpose. Update the recorded `now` value, or switch the gate to `--strict`.

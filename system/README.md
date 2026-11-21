@@ -99,6 +99,49 @@ At first, surname-first KYC names changed 8.4% of decisions (29 of them towards 
 8. Name + DOB agree with no shared country → REVIEW (12 dev hits moved from SAME_ENTITY).
 9. Birth-date phrases widened ("birth date of", "born during").
 
+## Red team (adversarial synthetic cases)
+A second agent tried to make the system clear hits it should not. `redteam/cases.py` has 48 tiny synthetic data rooms (one
+customer, one alert, one hit, plus notes, KYC checks and search rows where needed). Each runs the real `screen.run` and checks
+that the decision is one the policy allows; `redteam/FINDINGS.md` groups them into findings F1–F12 with a risk ranking.
+`python3 redteam/run_all.py --strict` is the gate.
+
+**Before:** 36 of 48 cases failed (33 unsafe clears, 1 REVIEW that should be SAME, 2 judgement calls).
+**After this pass:** 2 fail, both F12 (left as a team call, see below). The fixes are general rules, not patches for the
+synthetic wording, and the safe default when unsure is REVIEW:
+- **F2b / F2 ages:** "was / is / turned N" is an age only when the clause ends there or an age word follows ("was 45.",
+  "was 45 when", "turned 45 in 2019"); "at N" only as "at 24," or "at 24 years old"; "were / are N" is never an age. Derived
+  ages outside 16–100 are dropped. "born 1974 or 1976" keeps both years.
+- **F3 dobs shapes:** an item or born-clause naming two or more years ("circa 1960-1965", "1960 to 1965", "1960, 1965",
+  "1960/61") becomes the whole span, year only.
+- **F5 note names:** capitals runs join across lower-case particles ("ANA MARIA da SILVA SANTOS"); titles (MR, DR, SHEIKH…) are
+  not name parts; a note that names a relative (spouse, son, on behalf of…) is not identity evidence for this customer.
+- **F6 note DOB / status:** dates after the birth keyword win; issue, expiry, opening and check dates are skipped; a DOB under
+  16 at the check date is unreadable. "consider", "refer", "manual review", "on hold"… count as negative. A note that both
+  approves and rejects is ambiguous: it never supplies clearing facts, and if counting it as approved would stop a clear,
+  the hit goes to REVIEW.
+- **F4 countries:** customer values with several countries ("Russia, Cyprus", "Russian/Cypriot"), lower-case codes and
+  ISO-style names are all read; every country an approved note names counts; US states and Canadian provinces map to their
+  country ("Newark, New Jersey" is not Jersey; "Atlanta, Georgia" counts as both Georgia and the US); historic names (USSR,
+  Yugoslavia, Czechoslovakia) map to successors. A place value we cannot place blocks a location clear.
+- **F1 entity type:** company / individual / unknown. Only a known company against a known individual is a contradiction.
+- **F8 scripts:** no NAME_MISMATCH_VERIFIED between names that share no script (Cyrillic verified name vs Latin hit).
+- **F7 placeholders:** document numbers like UNKNOWN / 000000 never merge people; 1900-01-01-style DOBs are missing.
+- **F10 snippets:** a search-snippet birth date must follow "born" directly ("born in Kano; listed 2012" is not 2012).
+- **F9 resolution:** a missed account_ref falls through to login_handle, then email. On an unlinked search, a clear must also
+  hold for anyone excluded only by the city spelling ("Munich" vs "München"); otherwise AMBIGUOUS / REVIEW.
+
+**Open, team call (F12):** the policy clears literally, but two patterns are risky: a support note saying the record DOB is a
+typo (not an identity check, so the record DOB still clears), and a customer day/month swap (05/12 vs 12/05). Changing them
+could cost practice points, so they are unchanged.
+
+**Effect on dev:** none. `output/dev.jsonl` is byte-identical before and after all of these fixes: the 819 dev hits never hit
+these patterns, so the fixes protect the unseen set at no dev cost. Practice is still 50/50, 0 unsafe, codes, customers and
+evidence 50/50; the 23 policy tests pass; no perturbation moves any decision towards DIFFERENT_ENTITY.
+
+**Reason renderer not wired.** `system/explain.py` (from the reasons audit, `audit/REASONS.md`) cites only the evidence for
+the chosen reason code. On the practice labels that alone lowers evidence agreement from 1.00 to 0.96 (H-13E1CF, H-CF173B,
+H-D9BBCC, whose references cite every contradiction), so we kept the current templates and left the renderer unintegrated.
+
 ## Three cases
 1. **Clear mismatch: H-D861DA → DIFFERENT_ENTITY / DOB_MISMATCH.** The alert's account ACC-A82365 is a joint account (CUS-804632 and CUS-902175), and the screened name and DOB pick CUS-804632. That customer's latest approved identity check is an onboarding note, NOTE-8548C1, giving a DOB of 1979-11-08. The hit has no `dobs` field, but its profile notes give an age at a date, so it was born in 1976 or 1977. 1979 is more than one year outside both years, so the hit is cleared, citing NOTE-8548C1.
 2. **Match: H-582410 → SAME_ENTITY / NAME_DOB_LOCATION_MATCH.** The same joint-account resolution gives CUS-377745. Verified DOB 1968-03-05 (NOTE-14E25A) is one of the hit's possible years (1967 or 1968, from "a 30-year-old … November 1998"). Spain is shared through the customer record, and the name agrees with "Elvira Velasco Morillo". Evidence: NOTE-14E25A, CUS-377745.
@@ -106,7 +149,7 @@ At first, surname-first KYC names changed 8.4% of decisions (29 of them towards 
 
 ## Honest limitations
 - **Free text is parsed with patterns, not a model.** Onboarding identity notes are read like this. The name is the longest upper-case token run; if there is none, it is a run of Capitalised words that shares a name part with the person's own records. The DOB is the date nearest a birth keyword (not the note's own date). The document country is a country or demonym outside the name. A note naming a rejected, failed or expired check is not evidence. A name read from a note is used only if it shares at least one part with the person's own records, which guards against parser garbage. Stress test: we rewrote every dev KYC note with Title-Case names. One decision moved (SAME → REVIEW) and none moved towards clearing.
-- **Age statements** are recognised by cue patterns. Profile notes use strong cues only; search snippets also use weak ones. A new phrasing for an age means no DOB from that sentence, which leads to REVIEW, not a clearance. The reverse risk is a number wrongly read as an age, which can clear a hit. That is why weak cues are limited to search snippets that already passed the listing-phrase and country checks.
+- **Age statements** are recognised by cue patterns. Profile notes use strong cues only (an age word, or "was / turned N" that ends the clause or is followed by an age word); search snippets also use weak ones. Ages outside 16–100 are dropped. A new phrasing for an age means no DOB from that sentence, which leads to REVIEW, not a clearance. The reverse risk is a number wrongly read as an age, which can clear a hit. That is why weak cues are limited to search snippets that already passed the listing-phrase and country checks.
 - **DD/MM/YYYY is assumed day-first.** An impossible month falls back to the year only.
 - **The dev JSONL files were rebuilt from the organisers' browsing workbook.** The original dev/ files were not publicly downloadable. The loader accepts list fields either as JSON arrays or as "; "-joined strings, and structured address dicts with a `country` key. Profile notes over 32,000 characters were cut in the workbook.
 - **Unresolved alerts** (no record fits) go to REVIEW with `customer_record_id = null`. We never clear on unverified screened data alone. This did not happen in dev.
@@ -119,5 +162,6 @@ At first, surname-first KYC names changed 8.4% of decisions (29 of them towards 
 ## Tests and tools
 - `python3 tests/test_policy.py`: 23 synthetic rare-situation policy tests.
 - `python3 tools/perturb.py <data folder> [variant…]`: the rewording test above.
+- `python3 redteam/run_all.py --strict`: 48 adversarial synthetic cases (2 open, both F12).
 - `python3 tools/score.py output/dev.jsonl <data folder>/practice_labels.jsonl -v`: local cost score and reason checks.
 
