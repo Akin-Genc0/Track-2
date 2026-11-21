@@ -610,6 +610,8 @@ def build(track2: Path, out_dir: Path, predictions_only: bool = False) -> Path:
         source = str(output_path)
         for p in preds:
             ingest_cited(p.get("evidence") if isinstance(p.get("evidence"), list) else [])
+            # Records named only in the reason text are clickable in the desk too.
+            ingest_cited(re.findall(r"\b(?:CUS|KYC|NOTE|SR|ACC|APP)-[0-9A-Z]{4,}\b", str(p.get("reason") or "")))
             cid = p.get("customer_record_id")
             if cid and cid in cust_by:
                 needed_customers.add(cid)
