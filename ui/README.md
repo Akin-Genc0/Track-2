@@ -29,11 +29,20 @@ If you already have a predictions file, use **Load predictions** in the top bar,
 
 ## What you will see
 
-- Counts by decision, plus a practice-set decision score and unsafe-clearance count when labels exist (the 50 `practice_labels.jsonl` hits). The score is the share of review-baseline cost saved, using the brief’s cost matrix (an unsafe clear costs 60).
-- Filters: cleared / true match / review / pending / labeled / disagreements, and a name or ID search.
-- A side-by-side customer vs list-entry comparison with agree / conflict / insufficient highlighting on name, date of birth, nationality, countries and entity type.
-- The decision reason, reason code, cited evidence records, and (for practice hits) the reference reason and file path.
-- Keyboard: `J` / `K` next and previous, `1–4` filters, `L` labeled, `D` disagreements, `/` search, `?` help.
+Per hit, top to bottom, in the order a reviewer needs it:
+
+1. **Decision stamp**: Cleared / True match / Review, the raw decision (`DIFFERENT_ENTITY` …) and the reason code.
+2. **Deciding facts**: Date of birth, Country, Name and Entity type tiles, each in one of three states that differ in shape as well as shade: **= Match** (solid), **≠ Contradicts** (ink pill), **? Unknown** (dashed). A missing fact is never drawn as a mismatch. Facts the reason code asserts win over the desk's own parsing and are marked *Deciding fact*.
+3. **Reason**: the system's 2–4 sentence reason, the rule behind its code, the **cited records** as buttons, and one safety line (cleared only on a contradiction; review when unsure).
+4. **Side by side**: customer vs list entry. Weak fields that are still unknown fold under "more fields".
+5. **Evidence records**: cited cards first. Every record ID on the page (`CUS-`, `KYC-`, `NOTE-`, `SR-`, …) jumps to its card and rings it once.
+
+The header carries counts, practice labels answered correctly (`50/50`) and **unsafe clears** (`0`, with "unsure → Review"). All are computed from the bundle.
+
+- Filters with live counts (All / Cleared / True match / Review / Labeled / Disagrees) and search by name, ID or reason code, with an empty state and a one-click reset.
+- Keyboard: `J` / `K` next and previous (arrow keys while the queue has focus), `1–4` all / cleared / true match / review, `L` labeled, `D` disagreements, `/` search (`Enter` returns to the queue), `Esc` clear, `?` help.
+- Motion: 150–250ms ease-out, transform and opacity only, pointer selection only; `J`/`K` swaps instantly. `prefers-reduced-motion` turns it off.
+- Muted text is at least 4.5:1 on every surface, nothing is smaller than 11px, and controls share 28/32px heights and one focus ring. No horizontal overflow at 1280×800 or 1440×900.
 
 Until `output/dev.jsonl` exists, the 50 practice-label answers are loaded as **sample predictions** and a banner says so. That sample will score 100% on the practice set — it is not the team’s system.
 
@@ -45,4 +54,4 @@ Until `output/dev.jsonl` exists, the 50 practice-label answers are loaded as **s
 | `prepare.py` | Builds a compact `data/bundle.json` (hits, alerts, candidate customers, KYC, notes, search results, labels, predictions) |
 | `serve.py` | Tiny server + auto-refresh |
 | `data/bundle.json` | Generated case file (~4 MB) |
-| `screenshots/` | Headless captures of the desk |
+| `screenshots/` | Headless Chrome captures at 1440×900 (and `*-1280-*` at 1280×800) |
