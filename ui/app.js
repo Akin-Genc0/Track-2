@@ -88,7 +88,7 @@
     }
     for (const c of children) {
       if (c == null || c === false) continue;
-      n.appendChild(typeof c === "string" || typeof c === "number" ? document.createTextNode(String(c)) : c);
+      n.appendChild(c instanceof Node ? c : document.createTextNode(asText(c)));
     }
     return n;
   }
@@ -98,9 +98,20 @@
     return v;
   }
 
+  // Official data can carry lists and objects where the workbook had plain text
+  // (e.g. hits.details is {"pep": "..."}, practice_labels.path is a list).
+  function asText(v) {
+    if (v == null) return "";
+    if (Array.isArray(v)) return v.map(asText).filter(Boolean).join(", ");
+    if (typeof v === "object") {
+      return Object.entries(v).map(([k, x]) => { const s = asText(x); return s ? `${String(k).replace(/_/g, " ")}: ${s}` : ""; }).filter(Boolean).join("; ");
+    }
+    return String(v);
+  }
   function asList(v) {
     if (v == null || v === "") return [];
-    return Array.isArray(v) ? v.filter((x) => x != null && x !== "") : [v];
+    const arr = Array.isArray(v) ? v : [v];
+    return arr.filter((x) => x != null && x !== "").map((x) => (typeof x === "object" ? asText(x) : x)).filter((x) => x !== "");
   }
 
   function fold(s) {
@@ -1125,7 +1136,7 @@
     if (lab && lab.path) {
       parts.push(el("div", { class: "panel" },
         el("h3", null, "Path through the files"),
-        el("div", { class: "path" }, lab.path)
+        el("div", { class: "path" }, Array.isArray(lab.path) ? lab.path.map(asText).join("  →  ") : asText(lab.path))
       ));
     }
 
