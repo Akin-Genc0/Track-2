@@ -1015,6 +1015,15 @@
       decides ? el("div", { class: "ft-decides" }, "Deciding fact") : null);
   }
 
+  // Official hits carry details as {"pep": "Minister | Spain | …"}; the workbook form is a string.
+  function detailsText(v) {
+    if (v == null || typeof v !== "object") return String(v ?? "");
+    return Object.entries(v)
+      .filter(([, x]) => x != null && x !== "")
+      .map(([k, x]) => `${k}: ${typeof x === "object" ? JSON.stringify(x) : x}`)
+      .join("; ");
+  }
+
   function emptyStage(title, sub) {
     return el("div", { class: "empty", id: "empty" },
       el("div", { class: "empty-title" }, title),
@@ -1290,7 +1299,7 @@
     if (hit.profile_notes || hit.details || (hit.relationships && hit.relationships.length) || (hit.sources && hit.sources.length) || (hit.source_urls && hit.source_urls.length)) {
       const prof = el("section", { class: "panel" }, el("h3", null, "List-entry profile"));
       if (hit.position_or_allegation) prof.appendChild(el("div", { class: "prof-lead" }, hit.position_or_allegation));
-      if (hit.details) prof.appendChild(el("div", { class: "prof-details" }, hit.details));
+      if (hit.details) prof.appendChild(el("div", { class: "prof-details" }, detailsText(hit.details)));
       if (hit.profile_notes) prof.appendChild(el("div", { class: "notes-block" }, hit.profile_notes));
       if (hit.relationships && hit.relationships.length) {
         prof.appendChild(el("h3", { class: "sub" }, "Relationships"));

@@ -278,6 +278,8 @@ def build(track2: Path, out_dir: Path, predictions_only: bool = False) -> Path:
         for wrapper in ("customer", "screened", "screened_customer"):
             if isinstance(a.get(wrapper), dict):
                 a = dict(a[wrapper], **{k: v for k, v in a.items() if k != wrapper})
+        if "customer_name" not in a and a.get("name"):
+            a["customer_name"] = a["name"]
         alerts.append(a)
     customers = load_jsonl(dev / "customers.jsonl")
     accounts = load_jsonl(dev / "accounts.jsonl")
