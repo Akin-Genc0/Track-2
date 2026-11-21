@@ -14,6 +14,7 @@
 | --- | --- |
 | [system/README.md](system/README.md) | The required deliverable: architecture, policy choices, evidence, three worked cases, honest limitations |
 | [Judges' metrics](system/README.md#how-we-score-on-the-judges-metrics) and [Judge Q&A](system/README.md#judge-qa) | Measured unsafe clearances, clearance precision, same-entity recall and review rate on practice and shadow sets; short answers with file and function names |
+| [Live analyst desk (Vercel)](https://fathom-track2.vercel.app) | Fathom in the browser; load the organisers' dev folder or workbook locally (never uploaded) |
 | [deck/index.html](deck/index.html) | The pitch deck (open in a browser) |
 | [deck/DEMO_SCRIPT_3MIN.md](deck/DEMO_SCRIPT_3MIN.md) | The timed 3-minute live demo script |
 | [ui/screenshots/](ui/screenshots/) | All six analyst-desk screenshots |
