@@ -165,6 +165,11 @@ case("search_dob_says_why", [cust("CUS-000037", "Paolo Conti", "1985-01-01", nat
 case("unplaced_country_says_why", [cust("CUS-000038", "Ali Rahimi", None)], alert("A-000038", "Ali Rahimi", "ACC-38"),
      hit("A-000038", "Rahimi, Ali", countries=["Peru", "Zentravia"]), "REVIEW", accounts=[acc("ACC-38", "CUS-000038")],
      says=["Zentravia", "cannot be tied to a country"])
+# 34 a misspelling of any variant-group member matches the group: 'Muammad' (1 edit from 'muhammad') agrees with 'Mohammed',
+# so name and DOB agree and the country difference cannot clear the hit (perturbation of H-23805C)
+case("misspelt_variant_member_matches_group", [cust("CUS-000039", "Muammad Usman", "1994-08-24", nat="Nigeria", res="NG")],
+     alert("A-000039", "Muammad Usman", "ACC-39"), hit("A-000039", "Usman, Mohammed", dobs=["1994"], countries=["Pakistan"]), "REVIEW",
+     accounts=[acc("ACC-39", "CUS-000039")])
 
 fails = 0
 for c in CASES:

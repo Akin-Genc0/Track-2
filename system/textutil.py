@@ -186,7 +186,6 @@ class NameMatcher:
     def __init__(self, groups, legal_forms):
         self.group_of = {}
         self.members = {}
-        self._loose = False
         for gi, g in enumerate(groups):
             for n in g:
                 k = fold(n).strip()
@@ -205,10 +204,9 @@ class NameMatcher:
             return True
         if self._edit_ok(a, b):
             return True
-        if self._loose:      # a spelling of one part's variant group within the edit limit of the other part
-            return any(self._edit_ok(v, b) for g in ga or () for v in self.members[g]) or \
-                any(self._edit_ok(a, v) for g in gb or () for v in self.members[g])
-        return False
+        # a misspelling of any member of one part's variant group ('Muammad' for 'Mohammed', grouped with 'Muhammad')
+        return any(self._edit_ok(v, b) for g in ga or () for v in self.members[g]) or \
+            any(self._edit_ok(a, v) for g in gb or () for v in self.members[g])
 
     @staticmethod
     def _edit_ok(a, b):
@@ -219,13 +217,8 @@ class NameMatcher:
         return lev(a, b, lim) <= lim
 
     def agree_parts_loose(self, A, B):
-        """agree_parts, also matching a part to the variant-group spellings of the other within the edit limit.
-        Only used to stop a clear on the verified name ('AUBBAKAR' vs 'Aboubakar', listed with 'Abubakar'), never to confirm."""
-        self._loose = True
-        try:
-            return self.agree_parts(A, B)
-        finally:
-            self._loose = False
+        """Same as agree_parts now that part_match always accepts a misspelt variant-group member; kept for callers."""
+        return self.agree_parts(A, B)
 
     def _candidates(self, A, B):
         c = []
