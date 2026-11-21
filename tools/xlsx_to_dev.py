@@ -1,7 +1,31 @@
 """Rebuild a dev/ data folder (JSON Lines) from the organisers' browsing workbook.
 The workbook flattens list fields to '; '-joined strings; we split them back to arrays."""
 import json, os, re, sys
-src, dst = sys.argv[1], sys.argv[2]
+# Retain the legacy raw-folder invocation; otherwise locate a participant-provided workbook.
+import tempfile
+from pathlib import Path
+from workbook import extract
+if len(sys.argv) == 1:
+    workbook_name = "Screening Dev Set - browse.xlsx"
+    candidates = []
+    if os.environ.get("TRACK2_XLSX"):
+        candidates.append(Path(os.environ["TRACK2_XLSX"]).expanduser())
+    candidates.extend([Path.cwd() / workbook_name,
+                       Path.home() / "Track-2-data" / workbook_name])
+    workbook = next((path for path in candidates if path.is_file()), None)
+    if workbook is None:
+        sys.exit("Participant dataset not found. Set TRACK2_XLSX to your workbook, "
+                 "place 'Screening Dev Set - browse.xlsx' in the repository root, "
+                 "or put it in ~/Track-2-data/. The dataset is not committed. "
+                 "Alternatively, pass a ready dev/ folder directly to system/run.")
+    raw = tempfile.TemporaryDirectory()
+    src = raw.name
+    dst = str(Path(__file__).resolve().parents[1] / "data" / "dev")
+    extract(workbook, src)
+elif len(sys.argv) == 3:
+    src, dst = sys.argv[1:]
+else:
+    sys.exit("Usage: python3 tools/xlsx_to_dev.py [raw_folder output_folder]")
 os.makedirs(dst, exist_ok=True)
 LISTS = {
     'alerts': ['hit_ids'],
