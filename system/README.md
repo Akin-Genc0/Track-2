@@ -22,6 +22,7 @@ Each customer fact is stored with the set of record IDs it came from. For exampl
 - **DOB or temporal clears:** the source of the customer's date of birth, plus any SR-… result that gave the hit its date.
 - **Location clears:** every source of every customer country.
 - **Name clears:** the check that gave the verified name.
+- **Deceased clears:** the screened customer record (the death date is the hit's own fact).
 - **Confirms and reviews:** the sources of the agreeing facts (the DOB source and the sources of the shared countries).
 
 When several contradictions apply, the evidence is the union and the reason lists up to three of them. Reasons are generated from templates filled with this hit's own values: dates, countries, names and record IDs. `explain.py` renders every reason and enforces the brief's two to four sentences: the deciding facts first, then, if only one deciding fact applies, a sentence on what else was compared or is missing (name, date of birth, countries). For example, "The customer is linked only to Singapore, United States but the hit is linked only to Pakistan. Apart from this, the customer's name agrees with the hit's name Abdul Rahman and the hit gives no date of birth to compare; the country difference is enough to clear the hit under the policy."
@@ -31,7 +32,8 @@ There is no randomness, no model, no network and no clock. Every input is sorted
 
 ## Results on the development set
 - 50 practice labels: 50/50 decisions correct, 0 unsafe clearances, local decision score 1.000. Reason code fits 50/50, customer record right 50/50, evidence identical to the reference on all 50.
-- All 819 dev hits: 465 DIFFERENT_ENTITY (56.8%), 125 SAME_ENTITY, 229 REVIEW (28.0% review rate). The same run with any `PYTHONHASHSEED` gives byte-identical output.
+- All 819 dev hits: 465 DIFFERENT_ENTITY (56.8%), 125 SAME_ENTITY (15.3%), 229 REVIEW (28.0% review rate). The same run with any `PYTHONHASHSEED` gives byte-identical output.
+- Final integrated tree (after merging the loader hardening and repo polish): `tools/check_submission.py` passes on `output/dev.jsonl` (every row valid, every reason 2–4 sentences, every conclusive decision cites evidence); `tests/test_policy.py` 23/23, `tests/test_ages.py` 21/21, `tests/test_loader.py` and `tests/test_runner_boundary.py` pass; `redteam/run_all.py --strict` fails only the 2 F12 team-call cases; shadow seeds 7 and 21 score 0.965 with 0 unsafe; `tools/unseen_sim.py` shows 0 crashes, 0 missing rows and 0 moves to clear across 7 schema mutations; no `tools/perturb.py` rewrite moves a decision towards DIFFERENT_ENTITY.
 - [Spot check of 20 clears and 10 reviews](../REVIEW_NOTES.md): three clears warrant checking the link between the screened holder and the approved identity check. The practice score does not measure this risk across the unlabelled set.
 
 ## Hardening for the unseen set
@@ -170,6 +172,9 @@ on the customer's own applicant, like Akin's three). Turned on, it moves 60 dev 
 - `python3 tools/perturb.py <data folder> [variant…]`: the rewording test above.
 - `python3 redteam/run_all.py --strict`: 48 adversarial synthetic cases (2 open, both F12).
 - `python3 tests/test_ages.py`: age-cue probes (real ages read, counts and money not).
+- `python3 tests/test_loader.py`, `python3 tests/test_runner_boundary.py`: loader tolerance and per-hit fail-safes.
+- `python3 tools/check_submission.py output/dev.jsonl data/dev`: submission format, provenance and 2–4 sentence check.
+- `python3 tools/unseen_sim.py data/dev`: schema mutations (renamed, stringified, nested, missing, corrupt…); no crash, no move to clear.
 - `python3 tools/shadow.py gen <dir> 7 && system/run <dir> <out> && python3 tools/shadow.py score <dir> <out>`: shadow test set.
 - `python3 tools/ablate.py data/dev`: which dev and practice decisions depend on each component.
 - `python3 tools/score.py output/dev.jsonl <data folder>/practice_labels.jsonl -v`: local cost score and reason checks.

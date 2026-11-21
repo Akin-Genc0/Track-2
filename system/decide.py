@@ -112,7 +112,8 @@ class Decider:
                 [prof.primary])
         # deceased
         if hit.deceased and screened and date_lt(hit.deceased, screened):
-            contra["DECEASED"] = (f"The hit's profile gives a date of death of {fmt_date(hit.deceased)}, before the customer was screened on {fmt_date(screened)}.", [])
+            contra["DECEASED"] = (f"The hit's profile gives a date of death of {fmt_date(hit.deceased)}, before the customer was screened on {fmt_date(screened)}.",
+                                  [prof.primary])     # the death date is the hit's own fact; cite the screened customer record
         dobs = prof.dobs()
         # temporal
         if hit.earliest_report and dobs:

@@ -81,7 +81,7 @@ def run(folder, out_path):
             alert = alerts.get(aid, {"alert_id": aid})
             hf = HitFacts(h, matcher, sidx)
             if aid not in resolved_cache:
-                resolved_cache[aid] = idx.resolve_with_near(alert)
+                resolved_cache[aid] = idx.resolve(alert) + (idx.near(alert),)
             persons, path, near = resolved_cache[aid]
             if len(persons) == 1:
                 customer_id = persons[0]["primary"]

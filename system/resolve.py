@@ -173,6 +173,10 @@ class CustomerIndex:
         persons, path, _ = self.resolve_with_near(alert)
         return persons, path
 
+    def near(self, alert):
+        """People the screened city alone excluded (see resolve_with_near)."""
+        return self.resolve_with_near(alert)[2]
+
     def resolve_with_near(self, alert):
         """Like resolve, plus `near`: people found by the name search who fail only the screened city (an exonym or
         transliteration, 'Munich' vs 'München'). They never decide anything, but a clear must also hold for them."""
