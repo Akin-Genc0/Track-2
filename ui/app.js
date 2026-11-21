@@ -543,6 +543,8 @@
       const n = Object.keys(predictions(bundle)).length;
       const from = (bundle.meta && bundle.meta.prediction_source) || "output/dev.jsonl";
       src.textContent = live ? `${nf.format(n)} decisions from ${String(from).replace(/^\/track2\//, "")}` : "Practice-label answers, not the system";
+      const chg = $("btn-change-data");
+      if (chg) chg.hidden = state.dataSource !== "browser";
     }
     const banner = $("sample-banner");
     const showBanner = !live;
@@ -1855,11 +1857,49 @@
     render();
   }
 
+  function askForData(message) {
+    // Static hosting (GitHub Pages): the analyst supplies the dataset; it never leaves the browser.
+    return new Promise((resolve) => {
+      const drop = $("data-drop"), input = $("data-file"), status = $("drop-status"), zone = $("drop-zone");
+      $("boot-load").hidden = true;
+      drop.hidden = false;
+      status.textContent = message || "";
+      status.classList.toggle("err", !!message);
+      let busy = false;
+      const go = async (files) => {
+        if (busy || !files || !files.length) return;
+        busy = true; zone.classList.add("working"); status.classList.remove("err");
+        try {
+          const bundle = await window.FathomLoader.fromFiles(files, (m) => { status.textContent = m + "…"; });
+          drop.hidden = true; $("boot-load").hidden = false;
+          resolve(bundle);
+        } catch (err) {
+          status.textContent = err.message || String(err); status.classList.add("err");
+        } finally { busy = false; zone.classList.remove("working"); }
+      };
+      input.onchange = () => go(input.files);
+      $("data-folder").onchange = (e) => go(e.target.files);
+      zone.ondragover = (e) => { e.preventDefault(); zone.classList.add("over"); };
+      zone.ondragleave = () => zone.classList.remove("over");
+      zone.ondrop = (e) => { e.preventDefault(); zone.classList.remove("over"); go(e.dataTransfer.files); };
+    });
+  }
+
   async function loadBundle() {
     $("boot-msg").textContent = "Loading case files…";
-    const res = await fetch("data/bundle.json", { cache: "no-store" });
-    if (!res.ok) throw new Error(`Failed to load data/bundle.json (${res.status}). Run python3 prepare.py and serve from /workspace/track2_ui.`);
-    state.bundle = await res.json();
+    let res = null;
+    try { res = await fetch("data/bundle.json", { cache: "no-store" }); } catch (_) { res = null; }
+    if (res && res.ok) {
+      state.bundle = await res.json();
+      state.dataSource = "server";
+    } else {
+      if (!window.FathomLoader) throw new Error("No data/bundle.json and no in-browser loader. Run python3 ui/serve.py.");
+      const cached = await window.FathomLoader.getCached();
+      state.bundle = cached || await askForData();
+      state.dataSource = "browser";
+      render();
+      return;
+    }
     // If a live output file is being served, prefer it over sample predictions.
     try {
       const live = await fetch("/track2/output/dev.jsonl", { cache: "no-store" });
@@ -1890,6 +1930,14 @@
   function bind() {
     $("q").addEventListener("input", (e) => {
       state.filter.q = e.target.value;
+      render();
+    });
+    $("btn-change-data").addEventListener("click", async () => {
+      await window.FathomLoader.clearCached();
+      $("boot").classList.remove("done");
+      state.bundle = await askForData();
+      state.selectedId = null; state.mapPos = null;
+      $("boot").classList.add("done");
       render();
     });
     $("btn-reload").addEventListener("click", () => {
