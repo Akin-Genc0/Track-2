@@ -1118,3 +1118,7 @@ kbd {
   .tagline { display: none; }
   .brand { min-width: 118px; }
 }
+
+@media (hover: none) and (pointer: coarse) {
+  .keys, .search-kbd { display: none; }
+}

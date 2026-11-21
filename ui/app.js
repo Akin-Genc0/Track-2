@@ -430,12 +430,14 @@
     const rows = [];
     // Counts per decision honour search / labeled / disagree but not the decision filter,
     // so each chip says how many hits it would show.
-    const counts = { ALL: 0, SAME_ENTITY: 0, DIFFERENT_ENTITY: 0, REVIEW: 0, PENDING: 0 };
+    const counts = { ALL: 0, SAME_ENTITY: 0, DIFFERENT_ENTITY: 0, REVIEW: 0, PENDING: 0, LABELED: 0, DISAGREE: 0 };
     for (const hit of Object.values(bundle.hits)) {
       const pred = predictions(bundle)[hit.hit_id] || null;
       const lab = bundle.labels[hit.hit_id] || null;
       const alert = bundle.alerts[hit.alert_id] || {};
       const decision = pred && pred.decision ? pred.decision : "PENDING";
+      if (lab) counts.LABELED++;
+      if (lab && pred && lab.decision !== pred.decision) counts.DISAGREE++;
       if (filter.labeled && !lab) continue;
       if (filter.disagree) {
         if (!lab || !pred || lab.decision === pred.decision) continue;
@@ -1278,7 +1280,12 @@
     renderStats(bundle);
     const rows = buildQueue(bundle);
     renderFilters(rows.counts);
-    if (!state.selectedId && rows.length) state.selectedId = rows[0].hit.hit_id;
+    // A filter that hides the open hit moves you to the top of the new queue.
+    if (rows.length && !rows.some((r) => r.hit.hit_id === state.selectedId)) {
+      state.selectedId = rows[0].hit.hit_id;
+      state.selectedCustomer = null;
+      history.replaceState(null, "", "#" + state.selectedId);
+    }
     // Rebuild the queue only when its contents change; selection alone just moves the highlight.
     const queueKey = state.version + "|" + JSON.stringify(state.filter);
     if (queueKey !== state.queueKey) {

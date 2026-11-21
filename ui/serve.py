@@ -59,6 +59,9 @@ class Handler(SimpleHTTPRequestHandler):
     def end_headers(self):
         if self.path.startswith("/data/") or self.path.startswith("/track2/"):
             self.send_header("Cache-Control", "no-store")
+        else:
+            # Revalidate the desk's own files so an edited app.js is never stale mid-demo.
+            self.send_header("Cache-Control", "no-cache")
         self.send_header("Access-Control-Allow-Origin", "*")
         super().end_headers()
 
