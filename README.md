@@ -26,7 +26,8 @@
 - **Python standard library only:** no model, no API key, no network, $0 per run, about 16 s for 819 hits on one laptop core.
 - **Synthetic shadow sets** (559 hits each, seeds 7 and 21, formats dev never shows): score 0.965, 547/559 right, **0 unsafe**.
 - **No rewording moves a decision towards clearing:** `tools/perturb.py` rewrites names, dates, ages and countries across the data room; every change it causes moves towards `REVIEW`.
-- **Deterministic:** byte-identical output across runs and any `PYTHONHASHSEED`.
+- **Deterministic:** byte-identical output across runs and any `PYTHONHASHSEED`; 5 fresh-clone runs with different seeds give the same bytes.
+- **Robustness under perturbation** (external test, 8 perturbed copies of dev): stripping accents, swapping name order, upper-casing hit, customer and KYC names, and rewriting ISO DOBs as "24 August 1994" changed **0 of 819** decisions. Deleting one letter in long name parts moved 19 decisions, 18 of them towards `REVIEW`; the one move to a clear is being fixed.
 
 Practice and shadow scores are development feedback, not proof of unseen-set performance.
 
@@ -67,7 +68,7 @@ On the full dev set the system takes 589 of 819 hits (72%) off the analyst queue
 
 ## 30-second quickstart
 
-Needs Python 3.11 or newer; nothing to install.
+Needs Python 3.11 or newer; nothing to install. Tested on Python 3.11 and 3.13.5.
 
 ```sh
 git clone https://github.com/Akin-Genc0/Track-2 && cd Track-2
@@ -87,6 +88,13 @@ python3 tests/test_runner_boundary.py
 python3 tests/test_real_format.py
 python3 tests/test_packaging.py
 python3 -m py_compile system/*.py
+```
+
+**Check determinism yourself:** run it twice and compare hashes (on macOS use `shasum -a 256`). The two hashes must match; we don't print a hash here because the output changes as fixes land.
+
+```sh
+system/run /path/to/dev /tmp/run1.jsonl && system/run /path/to/dev /tmp/run2.jsonl
+sha256sum /tmp/run1.jsonl /tmp/run2.jsonl output/dev.jsonl
 ```
 
 `system/run` works from any working directory and with spaces in either path. It reads only the data folder it is given and writes one JSON line per hit. If the data folder or its `hits.jsonl` is missing, or `hits.jsonl` has no readable hit records, it stops with exit code 2 and a clear message and writes no output file.

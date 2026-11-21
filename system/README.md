@@ -46,6 +46,17 @@ When several contradictions apply, the evidence is the union and the reason list
 ## Determinism
 There is no randomness, no model, no network and no clock. Every input is sorted by ID before iteration. Union-find roots are the smallest record ID. Ties between checks on the same date break on check ID. `run` sets `PYTHONHASHSEED=0`, and runs with other seeds give byte-identical output (checked). A fresh-clone check of 5 runs with `PYTHONHASHSEED` 1 to 5 gave byte-identical output that matches `output/dev.jsonl` (verified 14:47 on f91f316), and the final tree's output is identical under `PYTHONHASHSEED` 0 to 3 (re-checked after the reason-wording fix). Any unexpected exception on a hit falls back to `REVIEW` instead of crashing, so a run always writes one line per hit.
 
+Tested on Python 3.11 and 3.13.5. To verify determinism, run twice and compare hashes (`shasum -a 256` on macOS). We don't publish a fixed hash because the output changes as fixes land:
+
+```sh
+system/run dev /tmp/run1.jsonl && system/run dev /tmp/run2.jsonl
+sha256sum /tmp/run1.jsonl /tmp/run2.jsonl output/dev.jsonl   # all three must match
+```
+
+**Robustness under perturbation (external test).** Across 8 perturbed copies of dev, stripping accents, swapping name order, upper-casing
+hit, customer and KYC names, and rewriting ISO DOBs as "24 August 1994" changed 0 of 819 decisions. Deleting one letter in long name
+parts moved 19 decisions, 18 of them towards `REVIEW`; the one move to a clear is being fixed.
+
 ## Results on the development set
 - 50 practice labels: 50/50 decisions correct, 0 unsafe clearances, local decision score 1.000. Reason code fits 50/50, customer record right 50/50, evidence identical to the reference on all 50.
 - All 819 dev hits: 464 DIFFERENT_ENTITY (56.7%), 125 SAME_ENTITY (15.3%), 230 REVIEW (28.1% review rate); see `audit/CROSSCHECK_JOHN.md` for the cross-check that moved one clear to REVIEW. The same run with any `PYTHONHASHSEED` gives byte-identical output.
