@@ -18,13 +18,26 @@ LISTING_PHRASES = [
 ]
 OTHER_PHRASE = "named on a watchlist"
 
-_AGE_PATTERNS = [
-    r"\baged? (\d{1,3})\b", r"\b(\d{1,3})[- ]years?[- ]old\b", r"\bage of (\d{1,3})\b", r"\b(\d{1,3}) years of age\b",
-    r"\b(\d{1,3}) years old\b", r"\bage:? ?(\d{1,3})\b", r"\(aged? (\d{1,3})\)", r"\((\d{1,3})\)", r", (\d{1,3}),",
-    r"\b(?:was|is|turned|reached|then) (\d{1,3})\b(?! ?(?:%|percent|years? (?:prison|sentence|jail)|months|days))",
+# Strong cues: an explicit age word. Used everywhere (profile notes are real-world prose).
+_STRONG = [
+    r"(?i)\baged? (\d{1,3})\b", r"(?i)\b(\d{1,3})[- ]years?[- ]old\b", r"(?i)\bage of (\d{1,3})\b", r"(?i)\b(\d{1,3}) years of age\b",
+    r"(?i)\b(\d{1,3}) years old\b", r"(?i)\bage:? ?(\d{1,3})\b", r"(?i)\(aged? (\d{1,3})\)", r"(?i)\b(\d{1,3}) yrs? old\b",
+    r"(?i)\b(\d{1,3})-year-old\b",
+    r"(?i)\b(?:was|is|were|are|turned|reached|then|aged)\s+(\d{1,3})\b(?!\s*(?:%|percent|per\b|[a-z]*illion|thousand|times|counts?|charges?|people|persons|men|women|units?|of\b|out\b|years? (?:in|prison|sentence|jail|imprisonment)|months?|days?|weeks?|hours?|minutes?|am\b|pm\b|a\.m|p\.m|o.clock|(?-i:[A-Z$£€])))",
+    r"\b[Aa]t (\d{1,3})\b(?!\s*(?:%|percent|per\b|[a-z]*illion|thousand|times|counts?|charges?|people|persons|men|women|units?|of\b|out\b|years? (?:in|prison|sentence|jail|imprisonment)|months?|days?|weeks?|hours?|minutes?|am\b|pm\b|a\.m|p\.m|o.clock|(?-i:[A-Z$£€])))",
 ]
-_AGE_RE = [re.compile(p, re.I) for p in _AGE_PATTERNS]
-_BORN_RE = re.compile(r"\bborn\b(?: (?:on|in))?", re.I)
+# Weak cues: a bare number next to a name ("Mark Mueller, 48, a sanctioned ..."). Only used for short search-result
+# snippets, and never when the number is part of a date.
+_WEAK = [
+    r"\((\d{1,3})\)", r", (\d{1,3}),",
+    r", (\d{1,3})\.\s", r"\b[Aa] (\d{1,3}) (?:a|an|the)\b", r"(?<![\d,] )\b(\d{1,3}), (?=[A-Z][a-z])", r", (\d{1,3})\.?\s*$",
+    r"\b(\d{1,3}) and (?:named|was|is|a|the|working|served)", r"\b[Aa] (\d{1,3}),", r"\b(\d{1,3}), (?:a|an|the)\b",
+    r"\b[Aa] (\d{1,3}) (?!(?:percent|per|years?|months?|days?|weeks?|hours?|million|billion|thousand|times|counts?|charges?|people|men|women|units?)\b)(?=[a-z])",
+]
+_STRONG_RE = [re.compile(p) for p in _STRONG]
+_WEAK_RE = [re.compile(p) for p in _WEAK]
+_MONTH_BEFORE = re.compile(r"(?i)\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s*$")
+_BORN_RE = re.compile(r"\b(?:born|birth ?date|date of birth|d\.?o\.?b\.?|birthday)\b(?:\s+(?:is|was|of|on|in|during|around|circa|c\.|:|as|recorded as|listed as|given as))*:?", re.I)
 _REPORT_RE = re.compile(r"^\s*According to [^;\n]+;\s*([^:\n]{4,40}?)\s*:", re.M)
 
 
@@ -37,28 +50,35 @@ def listing_phrase(primary, categories):
     return OTHER_PHRASE
 
 
-def ages_in(text):
-    """[(start, age)] for age statements in text."""
+def ages_in(text, weak=False):
+    """[(start, age)] for age statements in text. Numbers that belong to a date are never ages."""
+    spans = [(a, b) for a, b, _ in find_dates(text)]
     out = []
-    for rx in _AGE_RE:
+    for rx in _STRONG_RE + (_WEAK_RE if weak else []):
         for m in rx.finditer(text):
+            s0, e0 = m.span(1)
+            if any(s0 < b and e0 > a for a, b in spans):
+                continue
+            if _MONTH_BEFORE.search(text[max(0, s0 - 12):s0]) or re.search(r"(?:[/:]|\d[-.])$", text[max(0, s0 - 2):s0]):
+                continue
+            if re.match(r",? ?\d{4}\b|[/:]|[-.]\d", text[e0:e0 + 6]):
+                continue
             a = int(m.group(1))
             if 1 <= a <= 120:
                 out.append((m.start(), a))
     out.sort()
-    # dedupe by position
     res, last = [], -100
-    for s, a in out:
-        if s - last > 3:
-            res.append((s, a))
-            last = s
+    for s1, a in out:
+        if s1 - last > 3:
+            res.append((s1, a))
+            last = s1
     return res
 
 
-def years_from_age(text):
+def years_from_age(text, weak=False):
     """Birth-year candidates from an 'age at date' statement: someone aged 45 in March 2019 -> 1973 or 1974."""
     found = []
-    ages = ages_in(text)
+    ages = ages_in(text, weak)
     if not ages:
         return found
     dates = [(s, d) for s, e, d in find_dates(text) if not (d[1] is None and d[2] is None and re.search(r"\b%d\b" % d[0], text) and False)]
@@ -115,6 +135,9 @@ class HitFacts:
                         continue
                     d = parse_date(part)
                     if d:
+                        amb = re.search(r"\b(\d{1,2})[/.](\d{1,2})[/.]\d{2,4}\b", part)
+                        if amb and int(amb.group(1)) <= 12 and int(amb.group(2)) <= 12 and amb.group(1) != amb.group(2):
+                            d = (d[0], None, None)   # provider-written D/M vs M/D is ambiguous: keep the year only
                         self.dobs.append({"years": {d[0]}, "m": d[1], "d": d[2], "src": None, "kind": "field", "text": part})
             if self.dobs:
                 self.dob_source = "listed date of birth"
@@ -126,8 +149,11 @@ class HitFacts:
                 for m in _BORN_RE.finditer(sent):
                     tail = sent[m.end():m.end() + 40]
                     ds = find_dates(tail)
-                    if ds and ds[0][0] <= 3:
+                    if ds and ds[0][0] <= 3 and not re.search(r"(?i)\b(?:not|unknown|unverified)\b", tail[:ds[0][0]]):
                         d = ds[0][2]
+                        amb = re.match(r"\s*(?:on |in )?(\d{1,2})[/.](\d{1,2})[/.]\d{2,4}", tail)
+                        if amb and int(amb.group(1)) <= 12 and int(amb.group(2)) <= 12 and amb.group(1) != amb.group(2):
+                            d = (d[0], None, None)
                         pdobs.append({"years": {d[0]}, "m": d[1], "d": d[2], "src": None, "kind": "notes", "text": tail[:ds[0][1]]})
                 if not _BORN_RE.search(sent):
                     for kind, ys, mm, dd, age, ref in years_from_age(sent):
@@ -146,7 +172,7 @@ class HitFacts:
                         continue
                     if not (set(countries_in_text(snip)) & set(self.countries)):
                         continue
-                    ys = years_from_age(as_text(sr.get("snippet")))
+                    ys = years_from_age(as_text(sr.get("snippet")), weak=True)
                     born = None
                     for m in _BORN_RE.finditer(snip):
                         ds = find_dates(snip[m.end():m.end() + 30])

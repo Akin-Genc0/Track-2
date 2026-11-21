@@ -55,7 +55,49 @@ There is no randomness, no model, no network and no clock. Every input is sorted
 
 ## Results on the development set
 - 50 practice labels: 50/50 decisions correct, 0 unsafe clearances, local decision score 1.000. Reason code fits 50/50, customer record right 50/50, evidence identical to the reference on all 50.
-- All 819 dev hits: 466 DIFFERENT_ENTITY (57%), 136 SAME_ENTITY, 217 REVIEW (26.5% review rate).
+- All 819 dev hits: 465 DIFFERENT_ENTITY (56.8%), 125 SAME_ENTITY, 229 REVIEW (28.0% review rate). The same run with any `PYTHONHASHSEED` gives byte-identical output.
+
+## Hardening for the unseen set
+**Policy coverage.** `tests/test_policy.py` has 23 synthetic data rooms, one per rare situation, and all pass:
+- name + DOB agree but the countries differ → REVIEW, not SAME (the policy says so explicitly);
+- date of death after screening (no clear) and before it (DECEASED);
+- company incorporated after the earliest dated report;
+- rejected or expired KYC checks, and rejected KYC notes, ignored;
+- placeholder-only names (neither confirmed nor cleared on name);
+- two people fit and lead to different decisions → AMBIGUOUS_CUSTOMER_RECORD;
+- no customer found → REVIEW with null;
+- person vs company;
+- territory as its own country (Puerto Rico ≠ United States);
+- "International"/"Europe" not counted as countries;
+- a year-only DOB agrees with a full date;
+- DOB tolerance: one year off is no contradiction, two years off is;
+- same year with a different month;
+- a hit date written ambiguously as D/M or M/D (05/04/1980) keeps only the year;
+- verified names in Title Case and lower case;
+- 16 or older vs younger at the earliest dated report;
+- dated reports that don't use the exact form are ignored;
+- "(1) (2) (3)" list items are not ages.
+
+**Perturbation test.** `tools/perturb.py` rewrites a copy of the data room and counts decisions that change. It covers:
+- KYC notes: names in Title Case, lower case, or surname-first; other date formats ("3rd March 1970", "03/03/70", "03-Mar-1970", "03.03.1970"); synonyms; added noise;
+- hit profile notes: other age wordings, date formats and verbs;
+- the hit `dobs` field in other formats; hit countries as ISO codes and demonyms;
+- search snippets: ages, dates, sentence order;
+- residence notes reworded;
+- customer and KYC DOBs in other formats.
+
+At first, surname-first KYC names changed 8.4% of decisions (29 of them towards clearing), and new date formats changed up to 5.6% (10 towards clearing). After the fixes, no rewording moves any decision towards DIFFERENT_ENTITY, and the combined rewrite changes at most about 0.5% (towards REVIEW). Lower-case names in KYC notes change 3.4%, all towards REVIEW: on purpose, those names are never used to clear on name.
+
+**Fixes from this pass.**
+1. Names written in capitals may now run across a comma ("KUMAR, RAJESH").
+2. New date formats: ordinals, two-digit years (fixed pivot at 26, no clock), dd-Mon-yy, yyyy.mm.dd.
+3. Numbers that belong to a date are never read as ages. This fixed a real bug: on "On 24/02/23, the …" the old code read "23" as an age.
+4. Age cues are split into strong ones (an age word, or "was/then/at N" with unit exclusions), used everywhere, and weak ones ("Name, 48, …"), used only in search snippets. This removed an unsafe-looking dev clear: H-46F1CE had "(1) … (2) … (3)" read as ages.
+5. A verified name in a note that is not capitalised can confirm or keep a hit for review but never clears on name.
+6. Tokens such as "N26" are kept as name parts, so "N26 Bank AG" no longer agrees with "Danske Bank A/S"; digit-only tokens are still placeholders, and login handles lose their digit suffix.
+7. An individual customer name with fewer than 2 real parts can no longer agree through a one-part hit alias.
+8. Name + DOB agree with no shared country → REVIEW (12 dev hits moved from SAME_ENTITY).
+9. Birth-date phrases widened ("birth date of", "born during").
 
 ## Three cases
 1. **Clear mismatch: H-D861DA → DIFFERENT_ENTITY / DOB_MISMATCH.** The alert's account ACC-A82365 is a joint account (CUS-804632 and CUS-902175), and the screened name and DOB pick CUS-804632. That customer's latest approved identity check is an onboarding note, NOTE-8548C1, giving a DOB of 1979-11-08. The hit has no `dobs` field, but its profile notes give an age at a date, so it was born in 1976 or 1977. 1979 is more than one year outside both years, so the hit is cleared, citing NOTE-8548C1.
@@ -64,8 +106,18 @@ There is no randomness, no model, no network and no clock. Every input is sorted
 
 ## Honest limitations
 - **Free text is parsed with patterns, not a model.** Onboarding identity notes are read like this. The name is the longest upper-case token run; if there is none, it is a run of Capitalised words that shares a name part with the person's own records. The DOB is the date nearest a birth keyword (not the note's own date). The document country is a country or demonym outside the name. A note naming a rejected, failed or expired check is not evidence. A name read from a note is used only if it shares at least one part with the person's own records, which guards against parser garbage. Stress test: we rewrote every dev KYC note with Title-Case names. One decision moved (SAME → REVIEW) and none moved towards clearing.
-- **Age statements** in hit notes and search snippets are recognised by a set of cue patterns ("aged 45", "45-year-old", "(45)", ", 45,", "at the age of", "was 45", "Age: 45"). A new phrasing for an age means no DOB from that sentence. That leads to REVIEW, never a wrong clearance.
+- **Age statements** are recognised by cue patterns. Profile notes use strong cues only; search snippets also use weak ones. A new phrasing for an age means no DOB from that sentence, which leads to REVIEW, not a clearance. The reverse risk is a number wrongly read as an age, which can clear a hit. That is why weak cues are limited to search snippets that already passed the listing-phrase and country checks.
 - **DD/MM/YYYY is assumed day-first.** An impossible month falls back to the year only.
 - **The dev JSONL files were rebuilt from the organisers' browsing workbook.** The original dev/ files were not publicly downloadable. The loader accepts list fields either as JSON arrays or as "; "-joined strings, and structured address dicts with a `country` key. Profile notes over 32,000 characters were cut in the workbook.
 - **Unresolved alerts** (no record fits) go to REVIEW with `customer_record_id = null`. We never clear on unverified screened data alone. This did not happen in dev.
 - **The policy's rules are applied literally.** For example, a location clear only needs every customer country to differ from every hit country. If the bank's systems are missing a country the customer is linked to, that clear can be wrong. That risk comes from the policy, not from the code.
+- **Clears that rest on the policy alone (risky in the real world).** Most dev clears come from LOCATION_MISMATCH (214 location-only) and NAME_MISMATCH_VERIFIED (79 name-only). They follow the SOP to the letter, but they deserve a look:
+  - Branch listings, such as "N26 Bank AG - Branch" (UK or Austria) against N26 Bank AG (Germany), are cleared on location (H-19C3BF, H-E2B46A).
+  - Verified names that share one part with the hit, such as "Amelia Owusu" against "Owusu-Ansah, Emmanuel Mainoo", or "IFEANYI ADELEYE" against "Adeleke, Ayodele", are cleared because one matched part is not enough under principle 8.
+  - Company names that differ only by a legal form, such as "STILE ITALIANO S.R.L. GmbH" (Austria) against "STILE ITALIANO S.R.L." (Italy), are cleared on location.
+
+## Tests and tools
+- `python3 tests/test_policy.py`: 23 synthetic rare-situation policy tests.
+- `python3 tools/perturb.py <data folder> [variant…]`: the rewording test above.
+- `python3 tools/score.py output/dev.jsonl <data folder>/practice_labels.jsonl -v`: local cost score and reason checks.
+
