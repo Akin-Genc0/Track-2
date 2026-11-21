@@ -6,3 +6,5 @@ track1_zip_unrelated/
 *.zip
 .env
 __pycache__/
+ui/data/
+__pycache__/

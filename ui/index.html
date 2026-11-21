@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fathom — Watchlist entity review</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500;1,9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect fill='%230e1318' width='32' height='32' rx='6'/><text x='16' y='22' text-anchor='middle' font-size='16' fill='%23c4a35a' font-family='serif'>F</text></svg>" />
+</head>
+<body>
+  <div id="boot">
+    <div class="boot-mark">Fathom</div>
+    <div class="boot-sub" id="boot-msg">Loading case files…</div>
+    <div class="boot-bar"><span></span></div>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 36 36" aria-hidden="true">
+        <circle cx="18" cy="18" r="15.5" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <circle cx="18" cy="18" r="2.2" fill="currentColor"/>
+        <path d="M18 4.5 V9.5 M18 26.5 V31.5 M4.5 18 H9.5 M26.5 18 H31.5" stroke="currentColor" stroke-width="1.2"/>
+        <path d="M18 18 L26 11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <div class="wordmark">Fathom</div>
+        <div class="tagline">Watchlist entity review</div>
+      </div>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="top-actions">
+      <span id="mode-pill" class="pill pill-sample">Sample</span>
+      <button type="button" class="btn ghost" id="btn-reload" title="Reload bundle and predictions">Reload</button>
+      <label class="btn ghost" id="btn-import" title="Load a dev.jsonl predictions file">
+        Load predictions
+        <input type="file" id="file-preds" accept=".jsonl,application/jsonl,.json" hidden />
+      </label>
+      <button type="button" class="btn ghost" id="btn-help" title="Keyboard shortcuts">?</button>
+    </div>
+  </header>
+
+  <div id="sample-banner" class="banner" hidden>
+    <strong>Sample predictions.</strong>
+    The 50 practice-label answers are shown so the desk can be explored. They are not the team’s decision-system output.
+    This banner disappears when <code>output/dev.jsonl</code> is loaded.
+  </div>
+
+  <div class="shell">
+    <aside class="rail">
+      <div class="search-wrap">
+        <input type="search" id="q" placeholder="Search name, hit, alert, ID…" autocomplete="off" />
+      </div>
+      <div class="filters" id="filters"></div>
+      <div class="queue-meta" id="queue-meta"></div>
+      <div class="queue" id="queue" role="listbox" aria-label="Hit queue"></div>
+    </aside>
+
+    <main class="stage" id="stage">
+      <div class="empty" id="empty">
+        <div class="empty-title">Select a hit</div>
+        <div class="empty-sub">Use the queue, or press <kbd>J</kbd> / <kbd>K</kbd> to move.</div>
+      </div>
+    </main>
+  </div>
+
+  <div class="help" id="help" hidden>
+    <div class="help-card">
+      <h2>Keyboard</h2>
+      <dl>
+        <div><dt><kbd>J</kbd> / <kbd>K</kbd></dt><dd>Next / previous hit</dd></div>
+        <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></dt><dd>Filter: all, cleared, true match, review</dd></div>
+        <div><dt><kbd>L</kbd></dt><dd>Practice-labeled only</dd></div>
+        <div><dt><kbd>D</kbd></dt><dd>Disagreements with labels</dd></div>
+        <div><dt><kbd>/</kbd></dt><dd>Focus search</dd></div>
+        <div><dt><kbd>?</kbd></dt><dd>Toggle this help</dd></div>
+        <div><dt><kbd>Esc</kbd></dt><dd>Close help / clear search</dd></div>
+      </dl>
+      <p class="help-note">Fathom is a review desk for Track 2 entity-resolution hits. It does not decide cases; it reads <code>dev/</code> and <code>output/dev.jsonl</code>.</p>
+      <button type="button" class="btn" id="help-close">Close</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
