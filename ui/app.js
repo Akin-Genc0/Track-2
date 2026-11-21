@@ -1015,7 +1015,7 @@
       const citedSet = new Set(cited.length ? cited : asList(lab && lab.evidence));
       for (const id of evIds) gridE.appendChild(evidenceCard(id, bundle, citedSet.has(id)));
       evPanel.appendChild(el("div", { style: "color:var(--text-faint);font-size:12px;margin:-4px 0 10px" },
-        "Gold border marks IDs cited in the decision (or the practice label, if the system has not cited any)."
+        "Solid border and CITED tab mark IDs cited in the decision (or the practice label, if the system has not cited any)."
       ));
       evPanel.appendChild(gridE);
     }
