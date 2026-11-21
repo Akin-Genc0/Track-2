@@ -26,6 +26,8 @@
     selectedId: null,
     selectedCustomer: null,
     pollTimer: null,
+    view: "queue",
+    screen: null,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -38,6 +40,8 @@
     pending: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     labeled: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h4"/>',
     disagree: '<path d="M7 7h10M7 7l3-3M7 7l3 3M17 17H7M17 17l-3-3M17 17l-3 3"/>',
+    scan: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8M8 10.5h5M10.5 8v5"/>',
+    note: '<path d="M5 4h10l4 4v12H5z"/><path d="M9 12h6M9 16h4"/>',
   };
   const svg = (k, cls = "ico") => {
     const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -45,6 +49,21 @@
     s.innerHTML = ICON[k] || ""; return s;
   };
   const nf = new Intl.NumberFormat("en-GB");
+  const NOTES_KEY = "fathom.analystNotes.v1";
+  function loadNotes() {
+    try { return JSON.parse(localStorage.getItem(NOTES_KEY) || "{}") || {}; } catch (_) { return {}; }
+  }
+  function saveNotes(n) {
+    try { localStorage.setItem(NOTES_KEY, JSON.stringify(n)); return true; } catch (_) { return false; }
+  }
+  function noteCount() {
+    return Object.values(loadNotes()).reduce((a, l) => a + l.length, 0);
+  }
+  const PAGE = {
+    queue: ["Review queue", "Every watchlist hit with the system’s decision and the records behind it"],
+    screen: ["Screen a person", "Check one name against every watchlist entry before or after onboarding"],
+    notes: ["Analyst notes", "Information you’ve added to cases, kept in this browser"],
+  };
 
 
   function el(tag, attrs, ...children) {
@@ -531,26 +550,37 @@
         ["LABELED", "Labeled only", "labeled", labs.length],
         ["DISAGREE", "Disagreements", "disagree", disagreeN],
       ]],
+      ["Tools", [
+        ["VIEW:screen", "Screen a person", "scan", null],
+        ["VIEW:notes", "Analyst notes", "note", noteCount()],
+      ]],
     ];
     const box = $("filters");
     box.replaceChildren();
     for (const [title, items] of groups) {
       box.appendChild(el("div", { class: "nav-title" }, title));
       for (const [key, label, icon, count] of items) {
+        const isView = key.startsWith("VIEW:");
         const toggle = key === "LABELED" || key === "DISAGREE";
-        const on = key === "LABELED" ? f.labeled : key === "DISAGREE" ? f.disagree : f.decision === key;
+        const on = isView ? state.view === key.slice(5)
+          : key === "LABELED" ? f.labeled && state.view === "queue"
+          : key === "DISAGREE" ? f.disagree && state.view === "queue"
+          : f.decision === key && state.view === "queue";
         const btn = el("button", {
           type: "button",
           class: "nav-item" + (on ? " on" : "") + " n-" + icon,
           "aria-pressed": on ? "true" : "false",
           onclick: () => {
+            if (isView) { state.view = key.slice(5); render(); return; }
+            state.view = "queue";
             if (key === "LABELED") f.labeled = !f.labeled;
             else if (key === "DISAGREE") f.disagree = !f.disagree;
             else f.decision = key;
             render();
           },
         }, svg(icon), el("span", null, label),
-          toggle ? el("span", { class: "toggle" + (on ? " on" : "") }, el("i")) : el("span", { class: "count" }, nf.format(count || 0)));
+          toggle ? el("span", { class: "toggle" + (on ? " on" : "") }, el("i"))
+            : count == null ? null : el("span", { class: "count" }, nf.format(count || 0)));
         if (toggle) btn.appendChild(el("span", { class: "count sub" }, String(count || 0)));
         box.appendChild(btn);
       }
@@ -586,7 +616,8 @@
           el("div", { class: "q-sub" },
             el("span", { class: "mono" }, row.hit.hit_id),
             el("span", null, row.cat),
-            row.lab ? el("span", { class: "flag" + (row.disagree ? " bad" : "") }, row.disagree ? "Label differs" : "Labeled") : null
+            row.lab ? el("span", { class: "flag" + (row.disagree ? " bad" : "") }, row.disagree ? "Label differs" : "Labeled") : null,
+            (state._notes && state._notes[row.hit.hit_id] && state._notes[row.hit.hit_id].length) ? el("span", { class: "flag note" }, "Note") : null
           )
         ),
         el("div", { class: "q-right" },
@@ -986,6 +1017,8 @@
       ));
     }
 
+    parts.push(notesPanel(hit.hit_id));
+
     if (uniqueCust.length > 1) {
       parts.push(el("div", { class: "person-switch" },
         el("span", { class: "ps-k" }, `${uniqueCust.length} customer records fit this alert`),
@@ -1116,11 +1149,215 @@
     }
   }
 
+  // ---------- Tools: analyst notes ----------
+  function fmtWhen(iso) {
+    try { return new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); } catch (_) { return iso; }
+  }
+  function notesPanel(hitId) {
+    const list = (state._notes || {})[hitId] || [];
+    const box = el("section", { class: "notes-panel" },
+      el("div", { class: "sec-head" }, el("h3", null, "Analyst notes"), el("div", { class: "sec-note" }, list.length ? `${list.length} on this case` : "Add what you’ve learned that the records don’t show")));
+    for (const [i, n] of list.entries()) {
+      box.appendChild(el("div", { class: "note-item" },
+        el("div", { class: "note-text" }, n.text),
+        el("div", { class: "note-meta" }, el("span", null, fmtWhen(n.at)),
+          el("button", { type: "button", class: "link-btn", onclick: () => { const all = loadNotes(); all[hitId].splice(i, 1); if (!all[hitId].length) delete all[hitId]; saveNotes(all); render(); } }, "Delete"))
+      ));
+    }
+    const ta = el("textarea", { class: "note-input", rows: "2", placeholder: "e.g. Customer sent a passport copy, DOB is 1979, not 1977", "aria-label": "New analyst note" });
+    const add = () => {
+      const v = ta.value.trim(); if (!v) { ta.focus(); return; }
+      const all = loadNotes(); (all[hitId] = all[hitId] || []).push({ text: v, at: new Date().toISOString() });
+      if (!saveNotes(all)) { ta.setCustomValidity("This browser blocked saving notes"); ta.reportValidity(); return; }
+      render();
+    };
+    ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); add(); } });
+    box.appendChild(el("div", { class: "note-add" }, ta,
+      el("div", { class: "note-actions" }, el("span", { class: "muted small" }, "⌘ Enter to save"), el("button", { type: "button", class: "btn primary sm-fixed", onclick: add }, "Add note"))));
+    return box;
+  }
+
+  function openCase(id) {
+    state.view = "queue";
+    state.selectedId = id;
+    state.selectedCustomer = null;
+    history.replaceState(null, "", "#" + id);
+    render();
+  }
+
+  function renderNotes(bundle) {
+    const all = loadNotes();
+    const ids = Object.keys(all).filter((id) => all[id].length).sort((a, b) => {
+      const la = all[a][all[a].length - 1].at, lb = all[b][all[b].length - 1].at; return lb.localeCompare(la);
+    });
+    const preds = predictions(bundle);
+    const exportBtn = el("button", { type: "button", class: "btn", onclick: () => {
+      const rows = ids.flatMap((id) => all[id].map((n) => ({ hit_id: id, alert_id: bundle.hits[id] && bundle.hits[id].alert_id, note: n.text, added_at: n.at })));
+      const blob = new Blob([rows.map((r) => JSON.stringify(r)).join("\n") + "\n"], { type: "application/jsonl" });
+      const a = el("a", { href: URL.createObjectURL(blob), download: "analyst-notes.jsonl" }); document.body.appendChild(a); a.click(); a.remove();
+    } }, "Export notes");
+    if (!ids.length) exportBtn.disabled = true;
+    const wrap = el("div", { class: "tool" },
+      el("div", { class: "tool-head" },
+        el("div", null, el("h2", { class: "tool-title" }, ids.length ? `${noteCount()} ${noteCount() === 1 ? "note" : "notes"} on ${ids.length} ${ids.length === 1 ? "case" : "cases"}` : "No notes yet"),
+          el("p", { class: "tool-sub" }, "Notes are saved in this browser only. Export them to share with the team.")),
+        exportBtn));
+    if (!ids.length) {
+      wrap.appendChild(el("div", { class: "tool-empty" }, "Open any case and use Analyst notes under the decision to record something the records don’t show."));
+    }
+    for (const id of ids) {
+      const hit = bundle.hits[id] || {}; const p = preds[id];
+      const cls = p ? DECISION_CLASS[p.decision] || "pending" : "pending";
+      const card = el("div", { class: "note-case" },
+        el("div", { class: "nc-head" },
+          el("button", { type: "button", class: "nc-title", onclick: () => openCase(id) }, hit.name || id),
+          el("span", { class: "mono muted" }, id),
+          p ? el("span", { class: "dec " + cls }, DECISION_LABEL[p.decision] || p.decision) : null),
+        ...all[id].map((n) => el("div", { class: "note-item" }, el("div", { class: "note-text" }, n.text), el("div", { class: "note-meta" }, el("span", null, fmtWhen(n.at)))))
+      );
+      wrap.appendChild(card);
+    }
+    $("stage").replaceChildren(wrap);
+  }
+
+  // ---------- Tools: screen a person ----------
+  const LISTING_PHRASE = { sanctions: "a sanctioned individual", pep: "a politically exposed person", enforcement: "the subject of enforcement action", "adverse media": "named in adverse media", soe: "a state-owned enterprise official" };
+  function hitBirthYears(bundle, hit, lookup, notCountries) {
+    const listed = asList(hit.dobs);
+    if (listed.length) return { dobs: listed, src: "listed" };
+    const fromNotes = extractNoteDobs(hit.profile_notes).map((p) => String(p.y));
+    if (fromNotes.length) return { dobs: fromNotes, src: "profile notes" };
+    // web results about this hit: same kind of listing, in a country tied to the hit
+    const cse = (bundle.cases || {})[hit.alert_id];
+    if (!cse || !cse.search_ids) return { dobs: [], src: null };
+    const phrase = LISTING_PHRASE[fold(categoryOf(hit))] || "named on a watchlist";
+    const hc = hitCountries(hit, lookup, notCountries);
+    const years = new Set();
+    for (const id of cse.search_ids) {
+      const r = bundle.search_results[id]; if (!r || !r.snippet) continue;
+      if (!fold(r.snippet).includes(phrase)) continue;
+      const sc = countriesFromText(r.snippet, lookup, notCountries);
+      if (![...sc].some((c) => hc.has(c))) continue;
+      const age = /(\d{1,3})-year-old|age of (\d{1,3})|aged? (\d{1,3})|, (\d{1,3})[,.]|\((\d{1,3})\)|\bat (\d{1,3})\b|then (\d{1,3})|being (\d{1,3})/.exec(r.snippet);
+      const yr = /\b(19\d{2}|20\d{2})\b/.exec(r.snippet);
+      if (!age || !yr) continue;
+      const a = +age.slice(1).find(Boolean), y = +yr[1];
+      if (a > 0 && a < 120) { years.add(String(y - a - 1)); years.add(String(y - a)); }
+    }
+    return { dobs: [...years], src: years.size ? "web results" : null };
+  }
+
+  function screenOne(bundle, q) {
+    const variants = variantMap(bundle);
+    const { lookup, notCountries } = lookupMaps(bundle);
+    const qType = entityNorm(q.type);
+    const qC = countrySet([q.country], lookup, notCountries);
+    const out = [];
+    for (const hit of Object.values(bundle.hits)) {
+      const nm = q.name ? namesAgree([q.name], [hit.name, ...asList(hit.aliases)].filter(Boolean), variants) : { status: "unknown", matched: 0 };
+      if (q.name && !nm.matched) continue;
+      const hType = entityNorm(hit.entity_type);
+      const typeSt = !qType || !hType ? "unknown" : qType === hType ? "agree" : "conflict";
+      const hb = hitBirthYears(bundle, hit, lookup, notCountries);
+      const hDobs = hb.dobs;
+      const dobSt = q.dob ? dobStatus([q.dob], hDobs) : "unknown";
+      const locSt = setStatus(qC, hitCountries(hit, lookup, notCountries));
+      const nameSt = nm.status;
+      if (!q.name) {
+        // limited data: keep entries the given fields support and nothing contradicts
+        const given = [q.dob ? dobSt : null, q.country ? locSt : null, q.type && !q.typeDefault ? typeSt : null].filter(Boolean);
+        if (!given.includes("agree") || given.includes("conflict")) continue;
+      }
+      let verdict = "REVIEW", why = "Not enough agreement to confirm and nothing contradicts it";
+      if (typeSt === "conflict") { verdict = "DIFFERENT_ENTITY"; why = "One is a person and the other a company"; }
+      else if (dobSt === "conflict") { verdict = "DIFFERENT_ENTITY"; why = "Every birth date on the hit contradicts the one entered"; }
+      else if (nameSt === "agree" && dobSt === "agree") { verdict = locSt === "conflict" ? "REVIEW" : "SAME_ENTITY"; why = locSt === "conflict" ? "Name and birth date agree but the countries differ" : "Name and birth date agree and nothing contradicts them"; }
+      else if (locSt === "conflict") { verdict = "DIFFERENT_ENTITY"; why = "Every country differs"; }
+      else if (qType === "Company" && nameSt === "agree" && locSt === "agree") { verdict = "SAME_ENTITY"; why = "Company name and country agree"; }
+      else if (!q.name) { verdict = "REVIEW"; why = "Matches what you entered, but no name to compare"; }
+      else if (nameSt !== "agree") { verdict = "REVIEW"; why = "Only part of the name matches"; }
+      const score = (nameSt === "agree" ? 4 : nm.matched) + (dobSt === "agree" ? 3 : dobSt === "conflict" ? -3 : 0) + (locSt === "agree" ? 2 : locSt === "conflict" ? -2 : 0) + (typeSt === "conflict" ? -4 : 0);
+      out.push({ hit, nameSt, dobSt, locSt, typeSt, verdict, why, score, hDobs, dobSrc: hb.src });
+    }
+    const rank = { SAME_ENTITY: 0, REVIEW: 1, DIFFERENT_ENTITY: 2 };
+    out.sort((a, b) => rank[a.verdict] - rank[b.verdict] || b.score - a.score);
+    return out;
+  }
+
+  function renderScreen(bundle) {
+    const q = state.screen || { name: "", dob: "", country: "", type: "", typeDefault: true };
+    const field = (label, name, ph, extra = {}) => el("label", null, label, el("input", { name, value: q[name] || "", placeholder: ph, autocomplete: "off", ...extra }));
+    const form = el("form", { class: "screen-form" },
+      field("Name", "name", "Full name, or just part of it"),
+      field("Date of birth", "dob", "YYYY-MM-DD or year"),
+      field("Country", "country", "e.g. France"),
+      el("label", null, "Type", el("select", { name: "type" },
+        ...[["", "Any"], ["Individual", "Individual"], ["Company", "Company"]].map(([v, l]) => el("option", v === (q.type || "") ? { value: v, selected: "" } : { value: v }, l)))),
+      el("button", { type: "submit", class: "btn primary" }, "Scan watchlist")
+    );
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const typeVal = String(fd.get("type") || "");
+      state.screen = { name: String(fd.get("name") || "").trim(), dob: String(fd.get("dob") || "").trim(), country: String(fd.get("country") || "").trim(), type: typeVal || "", typeDefault: !typeVal };
+      if (!state.screen.name && !state.screen.dob && !state.screen.country) {
+        const inp = form.querySelector("input[name=name]");
+        inp.setCustomValidity("Enter at least a name, a date of birth or a country");
+        inp.reportValidity(); inp.addEventListener("input", () => inp.setCustomValidity(""), { once: true });
+        return;
+      }
+      renderScreen(bundle);
+      const r = $("stage").querySelector(".screen-results"); if (r) r.scrollIntoView({ block: "start" });
+    });
+    const wrap = el("div", { class: "tool" },
+      el("div", { class: "tool-head" }, el("div", null,
+        el("h2", { class: "tool-title" }, "Check a name against all " + nf.format(Object.keys(bundle.hits).length) + " watchlist entries"),
+        el("p", { class: "tool-sub" }, "Fill in as much or as little as you have. Any one field is enough, and every match is listed. Results use the case view’s matching rules and are indicative, not the decision system’s verdict."))),
+      form);
+    const ran = q.name || q.dob || q.country;
+    const what = [q.name && `“${q.name}”`, q.dob && `born ${q.dob}`, q.country && `linked to ${q.country}`].filter(Boolean).join(", ");
+    if (ran) {
+      const res = screenOne(bundle, q);
+      const counts = { SAME_ENTITY: 0, REVIEW: 0, DIFFERENT_ENTITY: 0 };
+      res.forEach((r) => counts[r.verdict]++);
+      const word = { agree: "Agrees", conflict: "Conflict", unknown: "—" };
+      const cell = (st) => el("span", { class: "status-pill " + st }, word[st]);
+      const box = el("section", { class: "screen-results" },
+        el("div", { class: "sec-head" },
+          el("h3", null, res.length ? `${nf.format(res.length)} watchlist ${res.length === 1 ? "entry matches" : "entries match"} ${what}` : `No watchlist entry matches ${what}`),
+          res.length ? el("div", { class: "sec-note" }, `${counts.SAME_ENTITY} likely same, ${counts.REVIEW} to review, ${counts.DIFFERENT_ENTITY} ruled out`) : null));
+      if (res.length) {
+        const shown = res;
+        box.appendChild(el("table", { class: "screen-table" },
+          el("thead", null, el("tr", null, ...["Watchlist entry", "List", "Name", "Born", "Country", "Indicative result"].map((h) => el("th", null, h)))),
+          el("tbody", null, ...shown.map((r) => el("tr", { class: "row", onclick: () => openCase(r.hit.hit_id), title: "Open this hit’s case" },
+            el("td", null, el("div", { class: "st-name" }, r.hit.name), el("div", { class: "mono muted" }, r.hit.hit_id)),
+            el("td", { class: "muted" }, categoryOf(r.hit)),
+            el("td", null, cell(r.nameSt)),
+            el("td", null, cell(r.dobSt), r.hDobs.length ? el("div", { class: "muted small" }, r.hDobs.slice(0, 3).join(" or ") + (r.dobSrc && r.dobSrc !== "listed" ? `, from ${r.dobSrc}` : "")) : null),
+            el("td", null, cell(r.locSt)),
+            el("td", null, el("span", { class: "dec " + DECISION_CLASS[r.verdict] }, DECISION_LABEL[r.verdict]), el("div", { class: "muted small" }, r.why))
+          )))));
+        if (res.length > 25) box.appendChild(el("p", { class: "muted small" }, "Add a birth date or country to narrow these down."));
+      }
+      wrap.appendChild(box);
+    }
+    $("stage").replaceChildren(wrap);
+    if (!ran) form.querySelector("input").focus();
+  }
+
   function render() {
     const bundle = state.bundle;
     if (!bundle) return;
+    state._notes = loadNotes();
     renderStats(bundle);
     renderFilters();
+    const [title, sub] = PAGE[state.view] || PAGE.queue;
+    $("page-title").textContent = title;
+    $("page-sub").textContent = sub;
+    document.body.classList.toggle("tool-view", state.view !== "queue");
+    if (state.view === "screen") { renderScreen(bundle); return; }
+    if (state.view === "notes") { renderNotes(bundle); return; }
     const rows = buildQueue(bundle);
     if (state.selectedId && !rows.some((r) => r.hit.hit_id === state.selectedId)) {
       // keep selection even if filtered out? Better to show it anyway in the stage, queue just won't highlight.
@@ -1223,7 +1460,7 @@
     $("help").addEventListener("click", (e) => { if (e.target.id === "help") $("help").hidden = true; });
 
     document.addEventListener("keydown", (e) => {
-      const inField = e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA");
+      const inField = e.target && ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName);
       if (e.key === "Escape") {
         if (!$("help").hidden) { $("help").hidden = true; return; }
         if (inField) { e.target.blur(); return; }
@@ -1233,8 +1470,9 @@
       if (inField) return;
       if (e.key === "?" || (e.key === "/" && e.shiftKey)) { e.preventDefault(); toggleHelp(); return; }
       if (e.key === "/") { e.preventDefault(); $("q").focus(); $("q").select(); return; }
-      if (e.key === "j" || e.key === "J") { move(1); return; }
-      if (e.key === "k" || e.key === "K") { move(-1); return; }
+      if ((e.key === "j" || e.key === "J") && state.view === "queue") { move(1); return; }
+      if ((e.key === "k" || e.key === "K") && state.view === "queue") { move(-1); return; }
+      if (["1", "2", "3", "4", "l", "L", "d", "D"].includes(e.key)) state.view = "queue";
       if (e.key === "1") { state.filter.decision = "ALL"; render(); }
       if (e.key === "2") { state.filter.decision = "DIFFERENT_ENTITY"; render(); }
       if (e.key === "3") { state.filter.decision = "SAME_ENTITY"; render(); }
@@ -1251,6 +1489,7 @@
       if (id && state.bundle && state.bundle.hits[id] && id !== state.selectedId) {
         state.selectedId = id;
         state.selectedCustomer = null;
+        state.view = "queue";
         render();
       }
     });
